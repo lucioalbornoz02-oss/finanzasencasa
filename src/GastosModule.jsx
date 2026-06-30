@@ -1,0 +1,777 @@
+import { useState, useEffect } from "react";
+import { supabase } from "./supabaseClient";
+
+export default function GastosModule() {
+  const [gastos, setGastos] = useState([]);
+  const [categorias, setCategorias] = useState([]);
+  const [mediosPago, setMediosPago] = useState([]);
+  const [miembros, setMiembros] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [editandoId, setEditandoId] = useState(null);
+
+  const [form, setForm] = useState({
+    descripcion: "",
+    categoria_id: "",
+    categoria_nueva: "",
+    medio_pago_id: "",
+    medio_pago_nuevo: "",
+    miembro_familia_id: "",
+    miembro_nuevo: "",
+    monto: "",
+    fecha_vencimiento: "",
+    fecha_pago_real: "",
+    estado: "pendiente",
+    es_cuota: false,
+    cuota_fija: true,
+    total_cuotas: "",
+    monto_total: "",
+    monto_por_cuota: "",
+    cuotas_variables: [],
+  });
+
+  useEffect(() => {
+    cargarCategorias();
+    cargarMediosPago();
+    cargarMiembros();
+    cargarGastos();
+  }, []);
+
+  useEffect(() => {
+    const canal = supabase
+      .channel("gastos-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "gastos" },
+        () => {
+          cargarGastos();
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(canal);
+    };
+  }, []);
+
+  async function cargarCategorias() {
+    const { data, error } = await supabase
+      .from("categorias")
+      .select("*")
+      .eq("tipo", "gasto")
+      .order("nombre", { ascending: true });
+    if (error) {
+      console.error("Error:", error);
+      return;
+    }
+    setCategorias(data);
+  }
+
+  async function cargarMediosPago() {
+    const { data, error } = await supabase
+      .from("categorias")
+      .select("*")
+      .eq("tipo", "medio_pago")
+      .order("nombre", { ascending: true });
+    if (error) {
+      console.error("Error:", error);
+      return;
+    }
+    setMediosPago(data);
+  }
+
+  async function cargarMiembros() {
+    const { data, error } = await supabase
+      .from("categorias")
+      .select("*")
+      .eq("tipo", "miembro_familia")
+      .order("nombre", { ascending: true });
+    if (error) {
+      console.error("Error:", error);
+      return;
+    }
+    setMiembros(data);
+  }
+
+  async function cargarGastos() {
+    setCargando(true);
+    const { data, error } = await supabase
+      .from("gastos")
+      .select(
+        "*, categoria:categoria_id(nombre), medio_pago:medio_pago_id(nombre), miembro:miembro_familia_id(nombre)"
+      )
+      .order("fecha_vencimiento", { ascending: true });
+    if (error) {
+      console.error("Error:", error);
+      setCargando(false);
+      return;
+    }
+
+    // Agrupamos las cuotas: solo mostramos la próxima pendiente de cada grupo
+    const gruposVistos = new Set();
+    const gastosAgrupados = [];
+
+    data.forEach((g) => {
+      if (g.es_cuota && g.grupo_cuota_id) {
+        if (!gruposVistos.has(g.grupo_cuota_id)) {
+          // Solo agregamos la primera cuota pendiente del grupo
+          if (g.estado === "pendiente") {
+            gruposVistos.add(g.grupo_cuota_id);
+            gastosAgrupados.push({ ...g, _esPrimera: true });
+          }
+        }
+      } else {
+        gastosAgrupados.push(g);
+      }
+    });
+
+    setGastos(gastosAgrupados);
+    setCargando(false);
+  }
+
+  function manejarCambio(e) {
+    const { name, value, type, checked } = e.target;
+    const val = type === "checkbox" ? checked : value;
+
+    setForm((ant) => {
+      const nuevo = { ...ant, [name]: val };
+
+      if (name === "monto_total" && ant.total_cuotas && ant.cuota_fija) {
+        const porCuota = parseFloat(value) / parseInt(ant.total_cuotas);
+        nuevo.monto_por_cuota = isNaN(porCuota) ? "" : porCuota.toFixed(2);
+      }
+      if (name === "monto_por_cuota" && ant.total_cuotas && ant.cuota_fija) {
+        const total = parseFloat(value) * parseInt(ant.total_cuotas);
+        nuevo.monto_total = isNaN(total) ? "" : total.toFixed(2);
+      }
+      if (name === "total_cuotas") {
+        const n = parseInt(value) || 0;
+        if (ant.cuota_fija) {
+          if (ant.monto_total) {
+            const porCuota = parseFloat(ant.monto_total) / n;
+            nuevo.monto_por_cuota = isNaN(porCuota) ? "" : porCuota.toFixed(2);
+          } else if (ant.monto_por_cuota) {
+            const total = parseFloat(ant.monto_por_cuota) * n;
+            nuevo.monto_total = isNaN(total) ? "" : total.toFixed(2);
+          }
+        } else {
+          nuevo.cuotas_variables = Array.from(
+            { length: Math.min(n, 24) },
+            (_, i) => ({ numero: i + 1, monto: "" })
+          );
+        }
+      }
+      if (name === "cuota_fija") {
+        nuevo.monto_total = "";
+        nuevo.monto_por_cuota = "";
+        nuevo.cuotas_variables =
+          !checked && ant.total_cuotas
+            ? Array.from(
+                { length: Math.min(parseInt(ant.total_cuotas), 24) },
+                (_, i) => ({ numero: i + 1, monto: "" })
+              )
+            : [];
+      }
+      return nuevo;
+    });
+  }
+
+  function manejarCuotaVariable(index, valor) {
+    setForm((ant) => {
+      const nuevasCuotas = [...ant.cuotas_variables];
+      nuevasCuotas[index] = { ...nuevasCuotas[index], monto: valor };
+      return { ...ant, cuotas_variables: nuevasCuotas };
+    });
+  }
+
+  function sumarMeses(fechaBase, meses) {
+    const fecha = new Date(fechaBase + "T00:00:00");
+    fecha.setMonth(fecha.getMonth() + meses);
+    return fecha.toISOString().split("T")[0];
+  }
+
+  async function resolverNuevoItem(idActual, valorNuevo, tipo, recargar) {
+    if (idActual !== "nuevo" && idActual !== "nueva") return idActual || null;
+    if (!valorNuevo.trim()) return null;
+    const { data, error } = await supabase
+      .from("categorias")
+      .insert({ nombre: valorNuevo.trim(), tipo })
+      .select()
+      .single();
+    if (error) {
+      alert(`No se pudo crear: ${tipo}`);
+      return null;
+    }
+    recargar();
+    return data.id;
+  }
+
+  async function manejarEnvio(e) {
+    e.preventDefault();
+
+    const categoriaIdFinal = await resolverNuevoItem(
+      form.categoria_id,
+      form.categoria_nueva,
+      "gasto",
+      cargarCategorias
+    );
+    if (!categoriaIdFinal) return;
+
+    const medioPagoIdFinal = await resolverNuevoItem(
+      form.medio_pago_id,
+      form.medio_pago_nuevo,
+      "medio_pago",
+      cargarMediosPago
+    );
+    const miembroIdFinal = await resolverNuevoItem(
+      form.miembro_familia_id,
+      form.miembro_nuevo,
+      "miembro_familia",
+      cargarMiembros
+    );
+
+    // Si no hay fecha de vencimiento, usamos la fecha de hoy
+    const hoy = new Date().toISOString().split("T")[0];
+    const fechaVencimientoFinal = form.fecha_vencimiento || hoy;
+
+    if (form.es_cuota && !editandoId) {
+      const totalCuotas = parseInt(form.total_cuotas);
+      const grupoCuotaId = crypto.randomUUID();
+
+      let cuotas;
+      if (form.cuota_fija) {
+        const montoPorCuota = parseFloat(form.monto_por_cuota);
+        cuotas = Array.from({ length: totalCuotas }, (_, i) => ({
+          descripcion: `${form.descripcion} (${i + 1}/${totalCuotas})`,
+          categoria_id: categoriaIdFinal,
+          medio_pago_id: medioPagoIdFinal,
+          miembro_familia_id: miembroIdFinal,
+          monto: montoPorCuota,
+          fecha_vencimiento: sumarMeses(fechaVencimientoFinal, i),
+          fecha_pago_real: null,
+          estado: "pendiente",
+          es_cuota: true,
+          grupo_cuota_id: grupoCuotaId,
+          numero_cuota: i + 1,
+          total_cuotas: totalCuotas,
+        }));
+      } else {
+        cuotas = form.cuotas_variables.map((c, i) => ({
+          descripcion: `${form.descripcion} (${i + 1}/${totalCuotas})`,
+          categoria_id: categoriaIdFinal,
+          medio_pago_id: medioPagoIdFinal,
+          miembro_familia_id: miembroIdFinal,
+          monto: parseFloat(c.monto) || 0,
+          fecha_vencimiento: sumarMeses(fechaVencimientoFinal, i),
+          fecha_pago_real: null,
+          estado: "pendiente",
+          es_cuota: true,
+          grupo_cuota_id: grupoCuotaId,
+          numero_cuota: i + 1,
+          total_cuotas: totalCuotas,
+        }));
+      }
+
+      const { error } = await supabase.from("gastos").insert(cuotas);
+      if (error) {
+        alert("No se pudieron guardar las cuotas.");
+        return;
+      }
+    } else {
+      // Si el estado es pagado y no hay fecha de pago real, usamos hoy
+      const fechaPagoReal =
+        form.estado === "pagado"
+          ? form.fecha_pago_real || hoy
+          : form.fecha_pago_real || null;
+
+      const datosGasto = {
+        descripcion: form.descripcion,
+        categoria_id: categoriaIdFinal,
+        medio_pago_id: medioPagoIdFinal,
+        miembro_familia_id: miembroIdFinal,
+        monto: parseFloat(form.monto),
+        fecha_vencimiento: fechaVencimientoFinal,
+        fecha_pago_real: fechaPagoReal,
+        estado: form.estado,
+        es_cuota: false,
+      };
+      let error;
+      if (editandoId) {
+        const res = await supabase
+          .from("gastos")
+          .update(datosGasto)
+          .eq("id", editandoId);
+        error = res.error;
+      } else {
+        const res = await supabase.from("gastos").insert(datosGasto);
+        error = res.error;
+      }
+      if (error) {
+        alert("No se pudo guardar el gasto.");
+        return;
+      }
+    }
+
+    limpiarFormulario();
+    cargarGastos();
+  }
+
+  function limpiarFormulario() {
+    setForm({
+      descripcion: "",
+      categoria_id: "",
+      categoria_nueva: "",
+      medio_pago_id: "",
+      medio_pago_nuevo: "",
+      miembro_familia_id: "",
+      miembro_nuevo: "",
+      monto: "",
+      fecha_vencimiento: "",
+      fecha_pago_real: "",
+      estado: "pendiente",
+      es_cuota: false,
+      cuota_fija: true,
+      total_cuotas: "",
+      monto_total: "",
+      monto_por_cuota: "",
+      cuotas_variables: [],
+    });
+    setEditandoId(null);
+  }
+
+  function editarGasto(gasto) {
+    setForm({
+      descripcion: gasto.descripcion || "",
+      categoria_id: gasto.categoria_id || "",
+      categoria_nueva: "",
+      medio_pago_id: gasto.medio_pago_id || "",
+      medio_pago_nuevo: "",
+      miembro_familia_id: gasto.miembro_familia_id || "",
+      miembro_nuevo: "",
+      monto: gasto.monto?.toString() || "",
+      fecha_vencimiento: gasto.fecha_vencimiento || "",
+      fecha_pago_real: gasto.fecha_pago_real || "",
+      estado: gasto.estado || "pendiente",
+      es_cuota: false,
+      cuota_fija: true,
+      total_cuotas: "",
+      monto_total: "",
+      monto_por_cuota: "",
+      cuotas_variables: [],
+    });
+    setEditandoId(gasto.id);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function eliminarGasto(id, grupoCuotaId) {
+    if (grupoCuotaId) {
+      const eliminarTodas = window.confirm(
+        "Este gasto es parte de un plan de cuotas.\n\nAceptar = eliminar TODAS las cuotas\nCancelar = eliminar solo esta"
+      );
+      if (eliminarTodas) {
+        const { error } = await supabase
+          .from("gastos")
+          .delete()
+          .eq("grupo_cuota_id", grupoCuotaId);
+        if (error) {
+          alert("No se pudo eliminar.");
+          return;
+        }
+      } else {
+        const { error } = await supabase.from("gastos").delete().eq("id", id);
+        if (error) {
+          alert("No se pudo eliminar.");
+          return;
+        }
+      }
+    } else {
+      if (!window.confirm("¿Seguro que querés eliminar este gasto?")) return;
+      const { error } = await supabase.from("gastos").delete().eq("id", id);
+      if (error) {
+        alert("No se pudo eliminar.");
+        return;
+      }
+    }
+    cargarGastos();
+  }
+
+  function formatearMonto(valor) {
+    return new Intl.NumberFormat("es-AR", {
+      style: "currency",
+      currency: "ARS",
+    }).format(valor);
+  }
+
+  const totalCuotasVariable = form.cuotas_variables.reduce(
+    (acc, c) => acc + (parseFloat(c.monto) || 0),
+    0
+  );
+
+  return (
+    <div className="container">
+      <h1>Gastos</h1>
+      <p className="subtitulo">Registrá y controlá los gastos de la casa.</p>
+
+      <div className="formulario">
+        <h2>{editandoId ? "Editar gasto" : "Nuevo gasto"}</h2>
+        <form onSubmit={manejarEnvio}>
+          <div className="grid-2">
+            <div className="campo col-span-2">
+              <label>Título del gasto</label>
+              <input
+                type="text"
+                name="descripcion"
+                value={form.descripcion}
+                onChange={manejarCambio}
+                placeholder="Ej: Supermercado, Alquiler, Netflix"
+                required
+              />
+            </div>
+
+            <div className="campo">
+              <label>Categoría</label>
+              <select
+                name="categoria_id"
+                value={form.categoria_id}
+                onChange={manejarCambio}
+                required
+              >
+                <option value="">Seleccionar categoría</option>
+                {categorias.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.nombre}
+                  </option>
+                ))}
+                <option value="nueva">+ Nueva categoría</option>
+              </select>
+            </div>
+            {form.categoria_id === "nueva" && (
+              <div className="campo">
+                <label>Nombre de la nueva categoría</label>
+                <input
+                  type="text"
+                  name="categoria_nueva"
+                  value={form.categoria_nueva}
+                  onChange={manejarCambio}
+                  placeholder="Ej: Farmacia"
+                  required
+                />
+              </div>
+            )}
+
+            <div className="campo">
+              <label>Medio de pago (opcional)</label>
+              <select
+                name="medio_pago_id"
+                value={form.medio_pago_id}
+                onChange={manejarCambio}
+              >
+                <option value="">Sin especificar</option>
+                {mediosPago.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.nombre}
+                  </option>
+                ))}
+                <option value="nuevo">+ Nuevo medio de pago</option>
+              </select>
+            </div>
+            {form.medio_pago_id === "nuevo" && (
+              <div className="campo">
+                <label>Nombre del medio de pago</label>
+                <input
+                  type="text"
+                  name="medio_pago_nuevo"
+                  value={form.medio_pago_nuevo}
+                  onChange={manejarCambio}
+                  placeholder="Ej: Tarjeta Visa, Efectivo"
+                  required
+                />
+              </div>
+            )}
+
+            <div className="campo">
+              <label>¿Quién lo realizó? (opcional)</label>
+              <select
+                name="miembro_familia_id"
+                value={form.miembro_familia_id}
+                onChange={manejarCambio}
+              >
+                <option value="">Sin especificar</option>
+                {miembros.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.nombre}
+                  </option>
+                ))}
+                <option value="nuevo">+ Agregar miembro</option>
+              </select>
+            </div>
+            {form.miembro_familia_id === "nuevo" && (
+              <div className="campo">
+                <label>Nombre del miembro</label>
+                <input
+                  type="text"
+                  name="miembro_nuevo"
+                  value={form.miembro_nuevo}
+                  onChange={manejarCambio}
+                  placeholder="Ej: María, Juan"
+                  required
+                />
+              </div>
+            )}
+
+            <div className="campo">
+              <label>Monto</label>
+              <input
+                type="number"
+                step="0.01"
+                name="monto"
+                value={form.monto}
+                onChange={manejarCambio}
+                placeholder="0.00"
+                required
+              />
+            </div>
+
+            <div className="campo">
+              <label>Estado</label>
+              <select
+                name="estado"
+                value={form.estado}
+                onChange={manejarCambio}
+              >
+                <option value="pendiente">Pendiente</option>
+                <option value="pagado">Pagado</option>
+              </select>
+            </div>
+
+            <div className="campo">
+              <label>Fecha de vencimiento (opcional)</label>
+              <input
+                type="date"
+                name="fecha_vencimiento"
+                value={form.fecha_vencimiento}
+                onChange={manejarCambio}
+              />
+            </div>
+
+            <div className="campo">
+              <label>Fecha real de pago (opcional)</label>
+              <input
+                type="date"
+                name="fecha_pago_real"
+                value={form.fecha_pago_real}
+                onChange={manejarCambio}
+              />
+            </div>
+
+            {!editandoId && (
+              <div className="campo col-span-2">
+                <label className="label-checkbox">
+                  <input
+                    type="checkbox"
+                    name="es_cuota"
+                    checked={form.es_cuota}
+                    onChange={manejarCambio}
+                  />
+                  ¿Es un gasto en cuotas?
+                </label>
+              </div>
+            )}
+
+            {form.es_cuota && !editandoId && (
+              <div className="campo col-span-2">
+                <label className="label-checkbox">
+                  <input
+                    type="checkbox"
+                    name="cuota_fija"
+                    checked={form.cuota_fija}
+                    onChange={manejarCambio}
+                  />
+                  Cuotas de monto fijo
+                </label>
+              </div>
+            )}
+
+            {form.es_cuota && (
+              <>
+                <div className="campo col-span-2">
+                  <label>
+                    Fecha de vencimiento de la primera cuota (opcional)
+                  </label>
+                  <input
+                    type="date"
+                    name="fecha_vencimiento"
+                    value={form.fecha_vencimiento}
+                    onChange={manejarCambio}
+                  />
+                </div>
+                <div className="campo">
+                  <label>Cantidad de cuotas (máx. 24)</label>
+                  <input
+                    type="number"
+                    name="total_cuotas"
+                    value={form.total_cuotas}
+                    onChange={manejarCambio}
+                    placeholder="Ej: 12"
+                    min="2"
+                    max="24"
+                    required
+                  />
+                </div>
+                {form.cuota_fija ? (
+                  <>
+                    <div className="campo">
+                      <label>Monto total (opcional)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        name="monto_total"
+                        value={form.monto_total}
+                        onChange={manejarCambio}
+                        placeholder="Ej: 120000"
+                      />
+                    </div>
+                    <div className="campo">
+                      <label>Monto por cuota (opcional)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        name="monto_por_cuota"
+                        value={form.monto_por_cuota}
+                        onChange={manejarCambio}
+                        placeholder="Ej: 10000"
+                      />
+                    </div>
+                    {form.monto_total &&
+                      form.monto_por_cuota &&
+                      form.total_cuotas && (
+                        <div className="campo col-span-2">
+                          <div className="resumen-cuotas">
+                            {form.total_cuotas} cuotas de{" "}
+                            {formatearMonto(parseFloat(form.monto_por_cuota))} =
+                            Total {formatearMonto(parseFloat(form.monto_total))}
+                          </div>
+                        </div>
+                      )}
+                  </>
+                ) : (
+                  form.cuotas_variables.length > 0 && (
+                    <div className="campo col-span-2">
+                      <label>Monto de cada cuota</label>
+                      <div className="cuotas-variables-grid">
+                        {form.cuotas_variables.map((c, i) => (
+                          <div key={i} className="cuota-variable-fila">
+                            <span className="cuota-variable-label">
+                              Cuota {c.numero}
+                            </span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={c.monto}
+                              onChange={(e) =>
+                                manejarCuotaVariable(i, e.target.value)
+                              }
+                              placeholder="0.00"
+                              required
+                              className="cuota-variable-input"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      {totalCuotasVariable > 0 && (
+                        <div
+                          className="resumen-cuotas"
+                          style={{ marginTop: "12px" }}
+                        >
+                          Total del plan: {formatearMonto(totalCuotasVariable)}
+                        </div>
+                      )}
+                    </div>
+                  )
+                )}
+              </>
+            )}
+          </div>
+
+          <div className="botones">
+            <button type="submit" className="btn-primary">
+              {editandoId
+                ? "Guardar cambios"
+                : form.es_cuota
+                ? "Generar cuotas"
+                : "Agregar gasto"}
+            </button>
+            {editandoId && (
+              <button
+                type="button"
+                onClick={limpiarFormulario}
+                className="btn-secondary"
+              >
+                Cancelar
+              </button>
+            )}
+          </div>
+        </form>
+      </div>
+
+      <h2>Gastos cargados</h2>
+      {cargando && <p className="texto-cargando">Cargando gastos...</p>}
+      {!cargando && gastos.length === 0 && (
+        <p className="texto-vacio">Todavía no cargaste ningún gasto.</p>
+      )}
+
+      <div className="lista">
+        {gastos.map((gasto) => (
+          <div key={gasto.id} className="gasto-card">
+            <div className="gasto-info">
+              <div className="gasto-titulo">
+                <span className="gasto-nombre">
+                  {gasto.es_cuota
+                    ? gasto.descripcion.split(" (")[0]
+                    : gasto.descripcion}
+                </span>
+                <span
+                  className={`badge ${
+                    gasto.estado === "pagado"
+                      ? "badge-pagado"
+                      : "badge-pendiente"
+                  }`}
+                >
+                  {gasto.estado === "pagado" ? "Pagado" : "Pendiente"}
+                </span>
+                {gasto.es_cuota && (
+                  <span className="badge badge-cuota">
+                    Cuota {gasto.numero_cuota}/{gasto.total_cuotas}
+                  </span>
+                )}
+              </div>
+              <span className="gasto-meta">
+                {gasto.categoria?.nombre || "Sin categoría"}
+                {gasto.medio_pago?.nombre
+                  ? ` · ${gasto.medio_pago.nombre}`
+                  : ""}
+                {gasto.miembro?.nombre ? ` · ${gasto.miembro.nombre}` : ""}
+                {" · "}
+                {gasto.fecha_vencimiento
+                  ? `Vence ${new Date(
+                      gasto.fecha_vencimiento + "T00:00:00"
+                    ).toLocaleDateString("es-AR")}`
+                  : "Sin vencimiento"}
+              </span>
+            </div>
+            <div className="gasto-acciones">
+              <span className="gasto-monto">{formatearMonto(gasto.monto)}</span>
+              <button onClick={() => editarGasto(gasto)} className="btn-editar">
+                Editar
+              </button>
+              <button
+                onClick={() => eliminarGasto(gasto.id, gasto.grupo_cuota_id)}
+                className="btn-eliminar"
+              >
+                Eliminar
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

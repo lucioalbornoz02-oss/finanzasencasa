@@ -1,0 +1,920 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: #0f172a;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #e2e8f0;
+}
+
+.container {
+  max-width: 768px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin-bottom: 4px;
+}
+h2 {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 12px;
+}
+.subtitulo {
+  color: #94a3b8;
+  margin-bottom: 24px;
+  font-size: 0.95rem;
+}
+
+/* NAVEGACIÓN */
+.nav {
+  background: #0f172a;
+  border-bottom: 1px solid #1e293b;
+  padding: 0 16px;
+  display: flex;
+  gap: 4px;
+}
+
+.nav-btn {
+  background: none;
+  border: none;
+  padding: 14px 16px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #94a3b8;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.nav-btn:hover {
+  color: #cbd5e1;
+}
+
+.nav-btn-activo {
+  color: #818cf8;
+  border-bottom: 2px solid #818cf8;
+  background: rgba(129, 140, 248, 0.08);
+  border-radius: 6px 6px 0 0;
+}
+
+/* BADGE NAV */
+.nav-badge {
+  background: #dc2626;
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+/* FORMULARIO */
+.formulario {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 32px;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.col-span-2 {
+  grid-column: span 2;
+}
+
+@media (max-width: 600px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+  .col-span-2 {
+    grid-column: span 1;
+  }
+}
+
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.campo label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #cbd5e1;
+}
+
+.campo input,
+.campo select {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.95rem;
+  outline: none;
+  color: #f1f5f9;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  font-family: inherit;
+}
+
+.campo input:focus,
+.campo select:focus {
+  border-color: #818cf8;
+  box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.2);
+}
+
+.campo select option {
+  background: #1e293b;
+  color: #e2e8f0;
+}
+.campo input::placeholder {
+  color: #475569;
+}
+
+.botones {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  color: white;
+  border: none;
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  font-family: inherit;
+}
+.btn-primary:hover {
+  opacity: 0.9;
+}
+
+.btn-secondary {
+  background: #1e293b;
+  color: #cbd5e1;
+  border: 1px solid #334155;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  font-family: inherit;
+}
+.btn-secondary:hover {
+  background: #334155;
+}
+
+/* LISTADO */
+.lista {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gasto-card {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.gasto-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.gasto-titulo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.gasto-nombre {
+  font-weight: 500;
+  color: #f1f5f9;
+}
+.gasto-meta {
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.badge-pendiente {
+  background-color: #422006;
+  color: #fb923c;
+}
+.badge-pagado {
+  background-color: #052e16;
+  color: #4ade80;
+}
+.badge-cuota {
+  background-color: #1e1b4b;
+  color: #818cf8;
+}
+.badge-miembro {
+  background-color: #1e1b4b;
+  color: #a78bfa;
+}
+
+.gasto-acciones {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.gasto-monto {
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.btn-editar {
+  background: none;
+  border: none;
+  color: #818cf8;
+  font-weight: 500;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+.btn-editar:hover {
+  color: #a5b4fc;
+}
+.btn-eliminar {
+  background: none;
+  border: none;
+  color: #f87171;
+  font-weight: 500;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+.btn-eliminar:hover {
+  color: #fca5a5;
+}
+
+.texto-vacio {
+  color: #64748b;
+  font-style: italic;
+}
+.texto-cargando {
+  color: #64748b;
+}
+
+/* TOTAL INGRESOS */
+.total-card {
+  background: #052e16;
+  border: 1px solid #166534;
+  border-radius: 10px;
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+.total-label {
+  font-weight: 600;
+  color: #4ade80;
+}
+.total-monto {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #4ade80;
+}
+.ingreso-monto {
+  color: #4ade80 !important;
+}
+
+/* RESUMEN VENCIMIENTOS */
+.resumen-vencimientos {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.resumen-card {
+  flex: 1;
+  min-width: 140px;
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid transparent;
+}
+
+.resumen-total {
+  background: #1e293b;
+  border-color: #334155;
+}
+.resumen-vencido {
+  background: #450a0a;
+  border-color: #7f1d1d;
+}
+.resumen-urgente {
+  background: #422006;
+  border-color: #7c2d12;
+}
+
+.resumen-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #94a3b8;
+}
+.resumen-monto {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+.resumen-numero {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+/* VENCIMIENTOS */
+.vencimiento-card {
+  background: #1e293b;
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-left: 4px solid transparent;
+  border-top: 1px solid #334155;
+  border-right: 1px solid #334155;
+  border-bottom: 1px solid #334155;
+}
+
+.alerta-vencido {
+  border-left-color: #dc2626;
+  background: #1a0a0a;
+}
+.alerta-hoy {
+  border-left-color: #ea580c;
+  background: #1a0d07;
+}
+.alerta-urgente {
+  border-left-color: #d97706;
+  background: #1a1207;
+}
+.alerta-proximo {
+  border-left-color: #ca8a04;
+  background: #1e293b;
+}
+.alerta-ok {
+  border-left-color: #334155;
+  background: #1e293b;
+}
+
+.vencimiento-izq {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.vencimiento-der {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.badge-alerta {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.alerta-vencido-badge {
+  background: #450a0a;
+  color: #f87171;
+}
+.alerta-hoy-badge {
+  background: #431407;
+  color: #fb923c;
+}
+.alerta-urgente-badge {
+  background: #422006;
+  color: #fbbf24;
+}
+.alerta-proximo-badge {
+  background: #422006;
+  color: #fcd34d;
+}
+.alerta-ok-badge {
+  background: #1e293b;
+  color: #94a3b8;
+}
+
+.btn-pagar {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  color: white;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.btn-pagar:hover {
+  opacity: 0.9;
+}
+
+.vencimiento-clickeable {
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+.vencimiento-clickeable:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.btn-volver {
+  background: none;
+  border: none;
+  color: #818cf8;
+  font-weight: 500;
+  font-size: 0.95rem;
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 16px;
+  display: inline-block;
+  font-family: inherit;
+}
+.btn-volver:hover {
+  color: #a5b4fc;
+}
+
+/* FILTROS */
+.filtro-mes {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.filtro-comparar {
+  background: #1e293b;
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-top: -12px;
+  margin-bottom: 24px;
+  border: 1px solid #334155;
+}
+
+.filtro-grupo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.filtro-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #94a3b8;
+}
+
+.filtro-select {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  outline: none;
+  color: #f1f5f9;
+  font-family: inherit;
+}
+.filtro-select:focus {
+  border-color: #818cf8;
+}
+.filtro-select option {
+  background: #1e293b;
+  color: #f1f5f9;
+}
+
+.filtro-miembro-activo {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #818cf8;
+}
+
+/* TARJETAS RESUMEN */
+.resumen-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 32px;
+}
+
+@media (max-width: 600px) {
+  .resumen-cards-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.resumen-big-card {
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid transparent;
+}
+
+.resumen-big-ingreso {
+  background: #052e16;
+  border-color: #166534;
+}
+.resumen-big-gasto {
+  background: #450a0a;
+  border-color: #7f1d1d;
+}
+.resumen-big-positivo {
+  background: #1e1b4b;
+  border-color: #3730a3;
+}
+.resumen-big-negativo {
+  background: #450a0a;
+  border-color: #7f1d1d;
+}
+
+.resumen-big-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.resumen-big-monto {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+.resumen-big-sub {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+/* COMPARACIÓN */
+.comparar-tabla {
+  border: 1px solid #334155;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 32px;
+}
+
+.comparar-header {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  background: #0f172a;
+  padding: 10px 16px;
+  gap: 8px;
+}
+
+.comparar-col-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-align: right;
+}
+
+.comparar-fila {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  padding: 12px 16px;
+  gap: 8px;
+  border-top: 1px solid #1e293b;
+  font-size: 0.9rem;
+}
+
+.comparar-fila span:not(.comparar-label) {
+  text-align: right;
+  font-weight: 500;
+  color: #e2e8f0;
+}
+.comparar-fila-ingreso {
+  background: #0a1628;
+}
+.comparar-fila-gasto {
+  background: #150a0a;
+}
+.comparar-fila-saldo {
+  background: #0f172a;
+  font-weight: 600;
+}
+.comparar-label {
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.diff-positivo {
+  color: #4ade80;
+}
+.diff-negativo {
+  color: #f87171;
+}
+
+/* PLANES DE CUOTAS */
+.plan-cuota-card {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 8px;
+}
+
+.plan-finalizado {
+  opacity: 0.5;
+}
+
+.plan-cuota-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.plan-cuota-nombre {
+  font-weight: 600;
+  color: #f1f5f9;
+  font-size: 1rem;
+}
+.plan-cuota-detalle {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.plan-cuota-fila {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.88rem;
+}
+
+.plan-cuota-label {
+  color: #94a3b8;
+}
+.plan-cuota-valor {
+  font-weight: 500;
+  color: #e2e8f0;
+}
+
+/* GRÁFICO */
+.grafico-container {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 32px;
+}
+
+.grafico-tooltip {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 10px 14px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.grafico-tooltip-nombre {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  margin-bottom: 2px;
+}
+.grafico-tooltip-monto {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+/* TABLA CATEGORÍAS */
+.categorias-tabla {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.categoria-fila {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #1e293b;
+}
+.categoria-fila:last-child {
+  border-bottom: none;
+}
+
+.categoria-fila-izq {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.categoria-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.categoria-nombre {
+  font-size: 0.9rem;
+  color: #cbd5e1;
+  font-weight: 500;
+}
+.categoria-fila-der {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.categoria-monto {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+.categoria-porcentaje {
+  font-size: 0.8rem;
+  color: #64748b;
+  min-width: 36px;
+  text-align: right;
+}
+
+/* CUOTAS */
+.label-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+
+.label-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #818cf8;
+}
+
+.resumen-cuotas {
+  background: #1e1b4b;
+  border: 1px solid #3730a3;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #a5b4fc;
+}
+
+/* CUOTAS VARIABLES */
+.cuotas-variables-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.cuota-variable-fila {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cuota-variable-label {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #94a3b8;
+}
+
+.cuota-variable-input {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 0.9rem;
+  outline: none;
+  width: 100%;
+  color: #f1f5f9;
+  font-family: inherit;
+}
+
+.cuota-variable-input:focus {
+  border-color: #818cf8;
+  box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.2);
+}
+
+/* BOTONES EXPORTACIÓN */
+.export-botones {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.btn-export {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  font-family: inherit;
+}
+
+.btn-export:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.btn-export-excel {
+  background: linear-gradient(135deg, #166534, #15803d);
+  color: white;
+}
+.btn-export-excel:hover:not(:disabled) {
+  opacity: 0.9;
+}
+.btn-export-pdf {
+  background: linear-gradient(135deg, #991b1b, #b91c1c);
+  color: white;
+}
+.btn-export-pdf:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+/* ALERTAS BANNER */
+.alertas-banner {
+  background: #1a1207;
+  border-bottom: 1px solid #78350f;
+  padding: 12px 24px;
+}
+
+.alertas-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.alertas-titulo {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #fbbf24;
+}
+
+.alertas-cerrar {
+  background: none;
+  border: none;
+  color: #92400e;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0;
+  font-family: inherit;
+}
+
+.alertas-ver-btn {
+  background: none;
+  border: none;
+  color: #f59e0b;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+}
+.alertas-ver-btn:hover {
+  color: #fbbf24;
+}
