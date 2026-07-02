@@ -918,3 +918,21 @@ h2 {
 .alertas-ver-btn:hover {
   color: #fbbf24;
 }
+/* 4 TARJETAS RESUMEN */
+.resumen-cards-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 32px;
+}
+
+@media (max-width: 600px) {
+  .resumen-cards-grid-4 {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.resumen-big-pendiente {
+  background: #543107;
+  border-color: #af6e1f;
+}

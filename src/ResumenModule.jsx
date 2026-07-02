@@ -1,13 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
@@ -20,6 +13,7 @@ export default function ResumenModule() {
   const [miembros, setMiembros] = useState([]);
   const [ingresos, setIngresos] = useState([]);
   const [gastos, setGastos] = useState([]);
+  const [pendientes, setPendientes] = useState([]);
   const [vencimientos, setVencimientos] = useState([]);
   const [planesCuotas, setPlanesCuotas] = useState([]);
   const [cargando, setCargando] = useState(true);
@@ -125,6 +119,7 @@ export default function ResumenModule() {
     setCargando(true);
     const { desde, hasta } = rangoMes(mesSeleccionado, anioSeleccionado);
 
+    // Ingresos del mes
     let queryIngresos = supabase
       .from("ingresos")
       .select(
@@ -133,37 +128,53 @@ export default function ResumenModule() {
       .gte("fecha", desde)
       .lte("fecha", hasta);
 
+    // Gastos pagados en el mes (por fecha_pago_real)
     let queryGastos = supabase
       .from("gastos")
       .select(
         "*, categoria:categoria_id(nombre), medio_pago:medio_pago_id(nombre), miembro:miembro_familia_id(nombre)"
       )
-      .gte("fecha_vencimiento", desde)
-      .lte("fecha_vencimiento", hasta)
-      .eq("es_cuota", false);
+      .eq("estado", "pagado")
+      .gte("fecha_pago_real", desde)
+      .lte("fecha_pago_real", hasta);
+
+    // Pendientes: vencimiento hasta fin del mes seleccionado
+    let queryPendientes = supabase
+      .from("gastos")
+      .select("*, categoria:categoria_id(nombre)")
+      .eq("estado", "pendiente")
+      .lte("fecha_vencimiento", hasta);
 
     if (miembroFiltro !== "todos") {
       queryIngresos = queryIngresos.eq("miembro_familia_id", miembroFiltro);
       queryGastos = queryGastos.eq("miembro_familia_id", miembroFiltro);
+      queryPendientes = queryPendientes.eq("miembro_familia_id", miembroFiltro);
     }
 
-    const [{ data: ing }, { data: gas }, { data: cuotas }, { data: venc }] =
-      await Promise.all([
-        queryIngresos,
-        queryGastos,
-        supabase
-          .from("gastos")
-          .select("*, categoria:categoria_id(nombre)")
-          .eq("es_cuota", true),
-        supabase
-          .from("gastos")
-          .select("*, categoria:categoria_id(nombre)")
-          .eq("estado", "pendiente")
-          .order("fecha_vencimiento", { ascending: true }),
-      ]);
+    const [
+      { data: ing },
+      { data: gas },
+      { data: pend },
+      { data: cuotas },
+      { data: venc },
+    ] = await Promise.all([
+      queryIngresos,
+      queryGastos,
+      queryPendientes,
+      supabase
+        .from("gastos")
+        .select("*, categoria:categoria_id(nombre)")
+        .eq("es_cuota", true),
+      supabase
+        .from("gastos")
+        .select("*, categoria:categoria_id(nombre)")
+        .eq("estado", "pendiente")
+        .order("fecha_vencimiento", { ascending: true }),
+    ]);
 
     setIngresos(ing || []);
     setGastos(gas || []);
+    setPendientes(pend || []);
     setVencimientos(venc || []);
     procesarPlanesCuotas(cuotas || []);
     setCargando(false);
@@ -171,6 +182,7 @@ export default function ResumenModule() {
 
   async function cargarDatosComparacion() {
     const { desde, hasta } = rangoMes(mesComparar, anioComparar);
+
     let queryIngresos = supabase
       .from("ingresos")
       .select("*")
@@ -179,13 +191,15 @@ export default function ResumenModule() {
     let queryGastos = supabase
       .from("gastos")
       .select("*")
-      .gte("fecha_vencimiento", desde)
-      .lte("fecha_vencimiento", hasta)
-      .eq("es_cuota", false);
+      .eq("estado", "pagado")
+      .gte("fecha_pago_real", desde)
+      .lte("fecha_pago_real", hasta);
+
     if (miembroFiltro !== "todos") {
       queryIngresos = queryIngresos.eq("miembro_familia_id", miembroFiltro);
       queryGastos = queryGastos.eq("miembro_familia_id", miembroFiltro);
     }
+
     const [{ data: ing }, { data: gas }] = await Promise.all([
       queryIngresos,
       queryGastos,
@@ -218,6 +232,7 @@ export default function ResumenModule() {
       );
       const nombreBase = cuotas[0]?.descripcion?.split(" (")[0] || "Sin nombre";
       const totalCuotas = cuotas[0]?.total_cuotas || cuotas.length;
+      // Ordenamos pendientes por fecha de vencimiento
       const proximaVenc = [...pendientes].sort(
         (a, b) => new Date(a.fecha_vencimiento) - new Date(b.fecha_vencimiento)
       )[0];
@@ -233,7 +248,16 @@ export default function ResumenModule() {
         proximaVenc,
       };
     });
-    planes.sort((a, b) => b.cantPendientes - a.cantPendientes);
+    // Ordenamos planes por próxima fecha de vencimiento
+    planes.sort((a, b) => {
+      if (!a.proximaVenc && !b.proximaVenc) return 0;
+      if (!a.proximaVenc) return 1;
+      if (!b.proximaVenc) return -1;
+      return (
+        new Date(a.proximaVenc.fecha_vencimiento) -
+        new Date(b.proximaVenc.fecha_vencimiento)
+      );
+    });
     setPlanesCuotas(planes);
   }
 
@@ -258,6 +282,10 @@ export default function ResumenModule() {
     0
   );
   const totalGastos = gastos.reduce(
+    (acc, g) => acc + parseFloat(g.monto || 0),
+    0
+  );
+  const totalPendientes = pendientes.reduce(
     (acc, g) => acc + parseFloat(g.monto || 0),
     0
   );
@@ -288,7 +316,6 @@ export default function ResumenModule() {
       .sort((a, b) => b.value - a.value);
   }
 
-  // ---- EXPORTAR EXCEL ----
   async function exportarExcel() {
     setExportando(true);
     try {
@@ -300,7 +327,6 @@ export default function ResumenModule() {
           ]
         : [{ mes: mesSeleccionado, anio: anioSeleccionado }];
 
-      // HOJA RESUMEN
       const resumenData = [
         ["RESUMEN DE FINANZAS"],
         ["Generado el", new Date().toLocaleDateString("es-AR")],
@@ -308,12 +334,11 @@ export default function ResumenModule() {
       ];
 
       periodos.forEach(({ mes, anio }) => {
-        const { desde, hasta } = rangoMes(mes, anio);
         const esPeriodoA = mes === mesSeleccionado && anio === anioSeleccionado;
         const ing = esPeriodoA ? totalIngresos : totalIngresosB;
         const gas = esPeriodoA ? totalGastos : totalGastosB;
         const sal = ing - gas;
-
+        const { desde, hasta } = rangoMes(mes, anio);
         resumenData.push([
           `Período: ${etiquetaMes(mes, anio)}`,
           `Desde: ${desde}`,
@@ -321,7 +346,8 @@ export default function ResumenModule() {
         ]);
         resumenData.push(["Concepto", "Monto"]);
         resumenData.push(["Total Ingresos", ing]);
-        resumenData.push(["Total Gastos", gas]);
+        resumenData.push(["Total Gastos pagados", gas]);
+        resumenData.push(["Total Pendientes", totalPendientes]);
         resumenData.push(["Saldo", sal]);
         resumenData.push([]);
       });
@@ -341,7 +367,7 @@ export default function ResumenModule() {
           totalIngresos - totalIngresosB,
         ]);
         resumenData.push([
-          "Gastos",
+          "Gastos pagados",
           totalGastos,
           totalGastosB,
           totalGastos - totalGastosB,
@@ -350,7 +376,6 @@ export default function ResumenModule() {
         resumenData.push([]);
       }
 
-      // Gastos por categoría
       resumenData.push([
         "GASTOS POR CATEGORÍA",
         `(${etiquetaMes(mesSeleccionado, anioSeleccionado)})`,
@@ -367,7 +392,6 @@ export default function ResumenModule() {
       });
       resumenData.push([]);
 
-      // Planes de cuotas
       resumenData.push(["PLANES DE CUOTAS"]);
       resumenData.push([
         "Plan",
@@ -378,6 +402,7 @@ export default function ResumenModule() {
         "Pagado",
         "Pendiente",
         "Próx. vencimiento",
+        "Monto próx.",
       ]);
       planesCuotas.forEach((p) => {
         resumenData.push([
@@ -391,6 +416,7 @@ export default function ResumenModule() {
           p.proximaVenc
             ? formatFecha(p.proximaVenc.fecha_vencimiento)
             : "Finalizado",
+          p.proximaVenc ? p.proximaVenc.monto : "-",
         ]);
       });
 
@@ -400,9 +426,8 @@ export default function ResumenModule() {
         "Resumen"
       );
 
-      // HOJA GASTOS
       const gastosData = [
-        ["GASTOS", etiquetaMes(mesSeleccionado, anioSeleccionado)],
+        ["GASTOS PAGADOS", etiquetaMes(mesSeleccionado, anioSeleccionado)],
         [],
         [
           "Descripción",
@@ -410,7 +435,6 @@ export default function ResumenModule() {
           "Medio de pago",
           "Quién",
           "Monto",
-          "Vencimiento",
           "Fecha pago real",
           "Estado",
         ],
@@ -422,7 +446,6 @@ export default function ResumenModule() {
           g.medio_pago?.nombre || "-",
           g.miembro?.nombre || "-",
           parseFloat(g.monto),
-          formatFecha(g.fecha_vencimiento),
           formatFecha(g.fecha_pago_real),
           g.estado,
         ]);
@@ -435,7 +458,6 @@ export default function ResumenModule() {
         "Gastos"
       );
 
-      // HOJA INGRESOS
       const ingresosData = [
         ["INGRESOS", etiquetaMes(mesSeleccionado, anioSeleccionado)],
         [],
@@ -458,7 +480,6 @@ export default function ResumenModule() {
         "Ingresos"
       );
 
-      // HOJA VENCIMIENTOS
       const gruposVistos = new Set();
       const vencFiltrados = vencimientos.filter((g) => {
         if (!g.es_cuota || !g.grupo_cuota_id) return true;
@@ -505,7 +526,6 @@ export default function ResumenModule() {
         "Vencimientos"
       );
 
-      // Generar nombre del archivo
       const nombreArchivo = modoComparar
         ? `finanzas_${meses[mesSeleccionado]}_vs_${meses[mesComparar]}_${anioSeleccionado}.xlsx`
         : `finanzas_${meses[mesSeleccionado]}_${anioSeleccionado}.xlsx`;
@@ -518,7 +538,6 @@ export default function ResumenModule() {
     setExportando(false);
   }
 
-  // ---- EXPORTAR PDF ----
   async function exportarPDF() {
     setExportando(true);
     try {
@@ -554,11 +573,11 @@ export default function ResumenModule() {
           margin: { left: margen, right: margen },
           styles: { fontSize: 8, cellPadding: 2 },
           headStyles: {
-            fillColor: [4, 120, 87],
+            fillColor: [79, 70, 229],
             textColor: 255,
             fontStyle: "bold",
           },
-          alternateRowStyles: { fillColor: [245, 245, 244] },
+          alternateRowStyles: { fillColor: [30, 41, 59] },
           didDrawPage: (data) => {
             y = data.cursor.y + 6;
           },
@@ -566,7 +585,6 @@ export default function ResumenModule() {
         y = doc.lastAutoTable.finalY + 8;
       }
 
-      // PORTADA
       titulo(
         `Finanzas del Hogar — ${etiquetaMes(
           mesSeleccionado,
@@ -577,13 +595,13 @@ export default function ResumenModule() {
       subtitulo(`Generado el ${new Date().toLocaleDateString("es-AR")}`);
       salto(4);
 
-      // RESUMEN
       titulo("Resumen del período");
       tabla(
         ["Concepto", "Monto"],
         [
           ["Total Ingresos", formatearMonto(totalIngresos)],
-          ["Total Gastos", formatearMonto(totalGastos)],
+          ["Total Gastos pagados", formatearMonto(totalGastos)],
+          ["Total Pendientes", formatearMonto(totalPendientes)],
           ["Saldo", formatearMonto(saldo)],
         ]
       );
@@ -605,7 +623,7 @@ export default function ResumenModule() {
               diferencia(totalIngresos, totalIngresosB),
             ],
             [
-              "Gastos",
+              "Gastos pagados",
               formatearMonto(totalGastos),
               formatearMonto(totalGastosB),
               diferencia(totalGastos, totalGastosB),
@@ -620,7 +638,6 @@ export default function ResumenModule() {
         );
       }
 
-      // GASTOS POR CATEGORÍA
       if (datosGrafico().length > 0) {
         titulo("Gastos por categoría");
         tabla(
@@ -635,10 +652,11 @@ export default function ResumenModule() {
         );
       }
 
-      // GASTOS
       doc.addPage();
       y = 20;
-      titulo(`Gastos — ${etiquetaMes(mesSeleccionado, anioSeleccionado)}`);
+      titulo(
+        `Gastos pagados — ${etiquetaMes(mesSeleccionado, anioSeleccionado)}`
+      );
       tabla(
         [
           "Descripción",
@@ -646,7 +664,7 @@ export default function ResumenModule() {
           "Medio pago",
           "Quién",
           "Monto",
-          "Vencimiento",
+          "Fecha pago",
           "Estado",
         ],
         gastos.map((g) => [
@@ -655,13 +673,12 @@ export default function ResumenModule() {
           g.medio_pago?.nombre || "-",
           g.miembro?.nombre || "-",
           formatearMonto(g.monto),
-          formatFecha(g.fecha_vencimiento),
+          formatFecha(g.fecha_pago_real),
           g.estado,
         ])
       );
       titulo(`Total gastos: ${formatearMonto(totalGastos)}`, 10);
 
-      // INGRESOS
       doc.addPage();
       y = 20;
       titulo(`Ingresos — ${etiquetaMes(mesSeleccionado, anioSeleccionado)}`);
@@ -677,7 +694,6 @@ export default function ResumenModule() {
       );
       titulo(`Total ingresos: ${formatearMonto(totalIngresos)}`, 10);
 
-      // VENCIMIENTOS
       doc.addPage();
       y = 20;
       titulo("Vencimientos pendientes");
@@ -710,7 +726,6 @@ export default function ResumenModule() {
         })
       );
 
-      // PLANES DE CUOTAS
       if (planesCuotas.length > 0) {
         titulo("Planes de cuotas");
         tabla(
@@ -722,6 +737,7 @@ export default function ResumenModule() {
             "Pagado",
             "Pendiente",
             "Próx. venc.",
+            "Monto",
           ],
           planesCuotas.map((p) => [
             p.nombreBase,
@@ -733,6 +749,7 @@ export default function ResumenModule() {
             p.proximaVenc
               ? formatFecha(p.proximaVenc.fecha_vencimiento)
               : "Finalizado",
+            p.proximaVenc ? formatearMonto(p.proximaVenc.monto) : "-",
           ])
         );
       }
@@ -870,7 +887,6 @@ export default function ResumenModule() {
         </div>
       )}
 
-      {/* BOTONES DE EXPORTACIÓN */}
       {!cargando && (
         <div className="export-botones">
           <button
@@ -905,7 +921,9 @@ export default function ResumenModule() {
                   </span>
                 )}
               </h2>
-              <div className="resumen-cards-grid">
+
+              {/* 4 TARJETAS */}
+              <div className="resumen-cards-grid-4">
                 <div className="resumen-big-card resumen-big-ingreso">
                   <span className="resumen-big-label">Ingresos</span>
                   <span className="resumen-big-monto">
@@ -924,6 +942,16 @@ export default function ResumenModule() {
                     {gastos.length} registro{gastos.length !== 1 ? "s" : ""}
                   </span>
                 </div>
+                <div className="resumen-big-card resumen-big-pendiente">
+                  <span className="resumen-big-label">Pendientes</span>
+                  <span className="resumen-big-monto">
+                    {formatearMonto(totalPendientes)}
+                  </span>
+                  <span className="resumen-big-sub">
+                    {pendientes.length} registro
+                    {pendientes.length !== 1 ? "s" : ""}
+                  </span>
+                </div>
                 <div
                   className={`resumen-big-card ${
                     saldo >= 0 ? "resumen-big-positivo" : "resumen-big-negativo"
@@ -939,10 +967,11 @@ export default function ResumenModule() {
                 </div>
               </div>
 
+              {/* GRÁFICO */}
               {datosGraf.length > 0 && (
                 <div className="grafico-container">
                   <h2>Gastos por categoría</h2>
-                  <ResponsiveContainer width="100%" height={300}>
+                  <ResponsiveContainer width="100%" height={260}>
                     <PieChart>
                       <Pie
                         data={datosGraf}
@@ -952,6 +981,7 @@ export default function ResumenModule() {
                         outerRadius={110}
                         paddingAngle={3}
                         dataKey="value"
+                        label={false}
                       >
                         {datosGraf.map((entry, index) => (
                           <Cell
@@ -961,15 +991,6 @@ export default function ResumenModule() {
                         ))}
                       </Pie>
                       <Tooltip content={<TooltipPersonalizado />} />
-                      <Legend
-                        formatter={(value, entry) => (
-                          <span
-                            style={{ fontSize: "0.85rem", color: "#44403c" }}
-                          >
-                            {value} ({formatearMonto(entry.payload.value)})
-                          </span>
-                        )}
-                      />
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="categorias-tabla">
@@ -1126,8 +1147,8 @@ export default function ResumenModule() {
                         Próximo vencimiento
                       </span>
                       <span className="plan-cuota-valor">
-                        Cuota {plan.proximaVenc.numero_cuota} ·{" "}
-                        {formatFecha(plan.proximaVenc.fecha_vencimiento)}
+                        {formatFecha(plan.proximaVenc.fecha_vencimiento)} ·{" "}
+                        {formatearMonto(plan.proximaVenc.monto)}
                       </span>
                     </div>
                   )}
