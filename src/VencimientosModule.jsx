@@ -7,6 +7,7 @@ export default function VencimientosModule() {
   const [vencimientos, setVencimientos] = useState([]);
   const [detalleCuotas, setDetalleCuotas] = useState([]);
   const [cargando, setCargando] = useState(true);
+  const [expandirFuturos, setExpandirFuturos] = useState(false);
 
   useEffect(() => {
     cargarVencimientos();
@@ -41,6 +42,7 @@ export default function VencimientosModule() {
       return;
     }
 
+    // Para cuotas: solo mostramos la próxima pendiente de cada grupo
     const gruposVistos = new Set();
     const filtrados = data.filter((g) => {
       if (!g.es_cuota || !g.grupo_cuota_id) return true;
@@ -132,18 +134,36 @@ export default function VencimientosModule() {
     }).format(valor);
   }
 
-  const totalPendiente = vencimientos.reduce(
+  function formatFecha(fecha) {
+    if (!fecha) return "-";
+    return new Date(fecha + "T00:00:00").toLocaleDateString("es-AR");
+  }
+
+  // Separamos en próximos (<=7 días o vencidos) y futuros (>7 días)
+  const proximos = vencimientos.filter(
+    (g) => diasHastaVencimiento(g.fecha_vencimiento) <= 7
+  );
+  const futuros = vencimientos.filter(
+    (g) => diasHastaVencimiento(g.fecha_vencimiento) > 7
+  );
+
+  const totalPendiente = proximos.reduce(
     (acc, g) => acc + parseFloat(g.monto || 0),
     0
   );
-  const vencidosCantidad = vencimientos.filter(
+  const totalFuturos = futuros.reduce(
+    (acc, g) => acc + parseFloat(g.monto || 0),
+    0
+  );
+  const vencidosCantidad = proximos.filter(
     (g) => diasHastaVencimiento(g.fecha_vencimiento) < 0
   ).length;
-  const urgenteCantidad = vencimientos.filter((g) => {
+  const urgenteCantidad = proximos.filter((g) => {
     const d = diasHastaVencimiento(g.fecha_vencimiento);
     return d >= 0 && d <= 2;
   }).length;
 
+  // VISTA DETALLE DE PLAN DE CUOTAS
   if (vista === "detalle" && grupoCuotaActivo) {
     const pendientes = detalleCuotas.filter((c) => c.estado === "pendiente");
     const pagadas = detalleCuotas.filter((c) => c.estado === "pagado");
@@ -184,10 +204,10 @@ export default function VencimientosModule() {
           </div>
           <div
             className="resumen-card"
-            style={{ background: "#f0fdf4", borderColor: "#bbf7d0" }}
+            style={{ background: "#052e16", borderColor: "#166534" }}
           >
             <span className="resumen-label">Pagado</span>
-            <span className="resumen-monto" style={{ color: "#047857" }}>
+            <span className="resumen-monto" style={{ color: "#4ade80" }}>
               {formatearMonto(totalPagado)}
             </span>
           </div>
@@ -215,10 +235,7 @@ export default function VencimientosModule() {
                         </span>
                       </div>
                       <span className="gasto-meta">
-                        Vence{" "}
-                        {new Date(
-                          cuota.fecha_vencimiento + "T00:00:00"
-                        ).toLocaleDateString("es-AR")}
+                        Vence {formatFecha(cuota.fecha_vencimiento)}
                       </span>
                     </div>
                     <div className="vencimiento-der">
@@ -257,10 +274,7 @@ export default function VencimientosModule() {
                       <span className="badge badge-pagado">Pagada</span>
                     </div>
                     <span className="gasto-meta">
-                      Pagada el{" "}
-                      {new Date(
-                        cuota.fecha_pago_real + "T00:00:00"
-                      ).toLocaleDateString("es-AR")}
+                      Pagada el {formatFecha(cuota.fecha_pago_real)}
                     </span>
                   </div>
                   <div className="vencimiento-der">
@@ -277,6 +291,7 @@ export default function VencimientosModule() {
     );
   }
 
+  // VISTA LISTA PRINCIPAL
   return (
     <div className="container">
       <h1>Vencimientos</h1>
@@ -284,10 +299,11 @@ export default function VencimientosModule() {
         Gastos pendientes ordenados por fecha de vencimiento.
       </p>
 
-      {!cargando && vencimientos.length > 0 && (
+      {/* RESUMEN */}
+      {!cargando && proximos.length > 0 && (
         <div className="resumen-vencimientos">
           <div className="resumen-card resumen-total">
-            <span className="resumen-label">Total pendiente</span>
+            <span className="resumen-label">Próximos 7 días</span>
             <span className="resumen-monto">
               {formatearMonto(totalPendiente)}
             </span>
@@ -307,14 +323,15 @@ export default function VencimientosModule() {
         </div>
       )}
 
-      <h2>Gastos pendientes</h2>
+      {/* LISTADO PRÓXIMOS */}
+      <h2>Vencidos y próximos 7 días</h2>
       {cargando && <p className="texto-cargando">Cargando vencimientos...</p>}
-      {!cargando && vencimientos.length === 0 && (
-        <p className="texto-vacio">¡No hay gastos pendientes! Todo al día.</p>
+      {!cargando && proximos.length === 0 && (
+        <p className="texto-vacio">¡Sin vencimientos urgentes! Todo al día.</p>
       )}
 
-      <div className="lista">
-        {vencimientos.map((gasto) => {
+      <div className="lista" style={{ marginBottom: "24px" }}>
+        {proximos.map((gasto) => {
           const dias = diasHastaVencimiento(gasto.fecha_vencimiento);
           const alerta = obtenerAlerta(dias);
           const esCuota = gasto.es_cuota && gasto.grupo_cuota_id;
@@ -345,10 +362,8 @@ export default function VencimientosModule() {
                 </div>
                 <span className="gasto-meta">
                   {gasto.categoria?.nombre || "Sin categoría"} · Vence{" "}
-                  {new Date(
-                    gasto.fecha_vencimiento + "T00:00:00"
-                  ).toLocaleDateString("es-AR")}
-                  {esCuota && " · Tocá para ver el plan completo →"}
+                  {formatFecha(gasto.fecha_vencimiento)}
+                  {esCuota && " · Tocá para ver el plan →"}
                 </span>
               </div>
               <div
@@ -371,6 +386,90 @@ export default function VencimientosModule() {
           );
         })}
       </div>
+
+      {/* TARJETA FUTUROS (+7 DÍAS) */}
+      {!cargando && futuros.length > 0 && (
+        <div>
+          <div
+            className="futuros-card"
+            onClick={() => setExpandirFuturos(!expandirFuturos)}
+          >
+            <div className="futuros-izq">
+              <span className="futuros-titulo">📅 Vencimientos + 7 días</span>
+              <span className="futuros-sub">
+                {futuros.length} gasto{futuros.length !== 1 ? "s" : ""} ·{" "}
+                {formatearMonto(totalFuturos)}
+              </span>
+            </div>
+            <span className="futuros-chevron">
+              {expandirFuturos ? "▲" : "▼"}
+            </span>
+          </div>
+
+          {expandirFuturos && (
+            <div className="lista" style={{ marginTop: "8px" }}>
+              {futuros.map((gasto) => {
+                const dias = diasHastaVencimiento(gasto.fecha_vencimiento);
+                const alerta = obtenerAlerta(dias);
+                const esCuota = gasto.es_cuota && gasto.grupo_cuota_id;
+
+                return (
+                  <div
+                    key={gasto.id}
+                    className={`vencimiento-card ${alerta.clase} ${
+                      esCuota ? "vencimiento-clickeable" : ""
+                    }`}
+                    onClick={esCuota ? () => abrirDetalle(gasto) : undefined}
+                  >
+                    <div className="vencimiento-izq">
+                      <div className="gasto-titulo">
+                        <span className="gasto-nombre">
+                          {esCuota
+                            ? gasto.descripcion.split(" (")[0]
+                            : gasto.descripcion}
+                        </span>
+                        <span className={`badge-alerta ${alerta.clase}-badge`}>
+                          {alerta.texto}
+                        </span>
+                        {esCuota && (
+                          <span className="badge badge-cuota">
+                            Cuota {gasto.numero_cuota}/{gasto.total_cuotas}
+                          </span>
+                        )}
+                      </div>
+                      <span className="gasto-meta">
+                        {gasto.categoria?.nombre || "Sin categoría"} · Vence{" "}
+                        {formatFecha(gasto.fecha_vencimiento)}
+                        {esCuota && " · Tocá para ver el plan →"}
+                      </span>
+                    </div>
+                    <div
+                      className="vencimiento-der"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span className="gasto-monto">
+                        {formatearMonto(gasto.monto)}
+                      </span>
+                      {!esCuota && (
+                        <button
+                          onClick={() => marcarComoPagado(gasto.id)}
+                          className="btn-pagar"
+                        >
+                          Marcar pagado
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!cargando && vencimientos.length === 0 && (
+        <p className="texto-vacio">¡No hay gastos pendientes! Todo al día.</p>
+      )}
     </div>
   );
 }

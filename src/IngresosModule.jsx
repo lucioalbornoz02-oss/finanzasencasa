@@ -2,11 +2,35 @@ import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 
 export default function IngresosModule() {
+  const hoy = new Date();
   const [ingresos, setIngresos] = useState([]);
   const [categorias, setCategorias] = useState([]);
   const [miembros, setMiembros] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [editandoId, setEditandoId] = useState(null);
+  const [filtroMes, setFiltroMes] = useState(hoy.getMonth());
+  const [filtroAnio, setFiltroAnio] = useState(hoy.getFullYear());
+  const [filtrarPorMes, setFiltrarPorMes] = useState(true);
+
+  const meses = [
+    "Enero",
+    "Febrero",
+    "Marzo",
+    "Abril",
+    "Mayo",
+    "Junio",
+    "Julio",
+    "Agosto",
+    "Septiembre",
+    "Octubre",
+    "Noviembre",
+    "Diciembre",
+  ];
+  const anios = [
+    hoy.getFullYear() - 2,
+    hoy.getFullYear() - 1,
+    hoy.getFullYear(),
+  ];
 
   const [form, setForm] = useState({
     descripcion: "",
@@ -21,8 +45,11 @@ export default function IngresosModule() {
   useEffect(() => {
     cargarCategorias();
     cargarMiembros();
-    cargarIngresos();
   }, []);
+
+  useEffect(() => {
+    cargarIngresos();
+  }, [filtroMes, filtroAnio, filtrarPorMes]);
 
   useEffect(() => {
     const canal = supabase
@@ -41,45 +68,50 @@ export default function IngresosModule() {
   }, []);
 
   async function cargarCategorias() {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("categorias")
       .select("*")
       .eq("tipo", "ingreso")
-      .order("nombre", { ascending: true });
-    if (error) {
-      console.error("Error:", error);
-      return;
-    }
-    setCategorias(data);
+      .order("nombre");
+    setCategorias(data || []);
   }
 
   async function cargarMiembros() {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("categorias")
       .select("*")
       .eq("tipo", "miembro_familia")
-      .order("nombre", { ascending: true });
-    if (error) {
-      console.error("Error:", error);
-      return;
-    }
-    setMiembros(data);
+      .order("nombre");
+    setMiembros(data || []);
   }
 
   async function cargarIngresos() {
     setCargando(true);
-    const { data, error } = await supabase
+
+    let query = supabase
       .from("ingresos")
       .select(
         "*, categoria:categoria_id(nombre), miembro:miembro_familia_id(nombre)"
       )
       .order("fecha", { ascending: false });
+
+    if (filtrarPorMes) {
+      const desde = new Date(filtroAnio, filtroMes, 1)
+        .toISOString()
+        .split("T")[0];
+      const hasta = new Date(filtroAnio, filtroMes + 1, 0)
+        .toISOString()
+        .split("T")[0];
+      query = query.gte("fecha", desde).lte("fecha", hasta);
+    }
+
+    const { data, error } = await query;
     if (error) {
       console.error("Error:", error);
       setCargando(false);
       return;
     }
-    setIngresos(data);
+    setIngresos(data || []);
     setCargando(false);
   }
 
@@ -206,6 +238,7 @@ export default function IngresosModule() {
       <h1>Ingresos</h1>
       <p className="subtitulo">Registrá los ingresos de la familia.</p>
 
+      {/* FORMULARIO */}
       <div className="formulario">
         <h2>{editandoId ? "Editar ingreso" : "Nuevo ingreso"}</h2>
         <form onSubmit={manejarEnvio}>
@@ -325,6 +358,54 @@ export default function IngresosModule() {
         </form>
       </div>
 
+      {/* FILTROS */}
+      <div className="filtro-mes" style={{ marginBottom: "16px" }}>
+        <div className="filtro-grupo">
+          <label className="filtro-label">
+            <input
+              type="checkbox"
+              checked={filtrarPorMes}
+              onChange={(e) => setFiltrarPorMes(e.target.checked)}
+              style={{ marginRight: "6px", accentColor: "#818cf8" }}
+            />
+            Filtrar por mes
+          </label>
+        </div>
+        {filtrarPorMes && (
+          <>
+            <div className="filtro-grupo">
+              <label className="filtro-label">Mes</label>
+              <select
+                value={filtroMes}
+                onChange={(e) => setFiltroMes(parseInt(e.target.value))}
+                className="filtro-select"
+              >
+                {meses.map((m, i) => (
+                  <option key={i} value={i}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="filtro-grupo">
+              <label className="filtro-label">Año</label>
+              <select
+                value={filtroAnio}
+                onChange={(e) => setFiltroAnio(parseInt(e.target.value))}
+                className="filtro-select"
+              >
+                {anios.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* TOTAL */}
       {!cargando && ingresos.length > 0 && (
         <div className="total-card">
           <span className="total-label">Total ingresos</span>
@@ -332,10 +413,11 @@ export default function IngresosModule() {
         </div>
       )}
 
+      {/* LISTADO */}
       <h2>Ingresos cargados</h2>
       {cargando && <p className="texto-cargando">Cargando ingresos...</p>}
       {!cargando && ingresos.length === 0 && (
-        <p className="texto-vacio">Todavía no cargaste ningún ingreso.</p>
+        <p className="texto-vacio">No hay ingresos para mostrar.</p>
       )}
 
       <div className="lista">

@@ -2,12 +2,37 @@ import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 
 export default function GastosModule() {
+  const hoy = new Date();
   const [gastos, setGastos] = useState([]);
   const [categorias, setCategorias] = useState([]);
   const [mediosPago, setMediosPago] = useState([]);
   const [miembros, setMiembros] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [editandoId, setEditandoId] = useState(null);
+  const [filtroEstado, setFiltroEstado] = useState("todos");
+  const [filtroMes, setFiltroMes] = useState(hoy.getMonth());
+  const [filtroAnio, setFiltroAnio] = useState(hoy.getFullYear());
+  const [filtrarPorMes, setFiltrarPorMes] = useState(true);
+
+  const meses = [
+    "Enero",
+    "Febrero",
+    "Marzo",
+    "Abril",
+    "Mayo",
+    "Junio",
+    "Julio",
+    "Agosto",
+    "Septiembre",
+    "Octubre",
+    "Noviembre",
+    "Diciembre",
+  ];
+  const anios = [
+    hoy.getFullYear() - 2,
+    hoy.getFullYear() - 1,
+    hoy.getFullYear(),
+  ];
 
   const [form, setForm] = useState({
     descripcion: "",
@@ -33,8 +58,11 @@ export default function GastosModule() {
     cargarCategorias();
     cargarMediosPago();
     cargarMiembros();
-    cargarGastos();
   }, []);
+
+  useEffect(() => {
+    cargarGastos();
+  }, [filtroMes, filtroAnio, filtrarPorMes, filtroEstado]);
 
   useEffect(() => {
     const canal = supabase
@@ -53,77 +81,126 @@ export default function GastosModule() {
   }, []);
 
   async function cargarCategorias() {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("categorias")
       .select("*")
       .eq("tipo", "gasto")
-      .order("nombre", { ascending: true });
-    if (error) {
-      console.error("Error:", error);
-      return;
-    }
-    setCategorias(data);
+      .order("nombre");
+    setCategorias(data || []);
   }
 
   async function cargarMediosPago() {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("categorias")
       .select("*")
       .eq("tipo", "medio_pago")
-      .order("nombre", { ascending: true });
-    if (error) {
-      console.error("Error:", error);
-      return;
-    }
-    setMediosPago(data);
+      .order("nombre");
+    setMediosPago(data || []);
   }
 
   async function cargarMiembros() {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("categorias")
       .select("*")
       .eq("tipo", "miembro_familia")
-      .order("nombre", { ascending: true });
-    if (error) {
-      console.error("Error:", error);
-      return;
-    }
-    setMiembros(data);
+      .order("nombre");
+    setMiembros(data || []);
   }
 
   async function cargarGastos() {
     setCargando(true);
-    const { data, error } = await supabase
+
+    const desde = new Date(filtroAnio, filtroMes, 1)
+      .toISOString()
+      .split("T")[0];
+    const hasta = new Date(filtroAnio, filtroMes + 1, 0)
+      .toISOString()
+      .split("T")[0];
+
+    // Traemos todos los gastos sin filtro de mes para procesar después
+    let query = supabase
       .from("gastos")
       .select(
         "*, categoria:categoria_id(nombre), medio_pago:medio_pago_id(nombre), miembro:miembro_familia_id(nombre)"
       )
       .order("fecha_vencimiento", { ascending: true });
+
+    const { data, error } = await query;
     if (error) {
       console.error("Error:", error);
       setCargando(false);
       return;
     }
 
-    // Agrupamos las cuotas: solo mostramos la próxima pendiente de cada grupo
-    const gruposVistos = new Set();
-    const gastosAgrupados = [];
+    let resultado = [];
 
-    data.forEach((g) => {
-      if (g.es_cuota && g.grupo_cuota_id) {
-        if (!gruposVistos.has(g.grupo_cuota_id)) {
-          // Solo agregamos la primera cuota pendiente del grupo
-          if (g.estado === "pendiente") {
+    if (filtrarPorMes) {
+      // Gastos simples: por fecha_vencimiento del mes
+      const gastosSimplesMes = data.filter(
+        (g) =>
+          !g.es_cuota &&
+          g.fecha_vencimiento >= desde &&
+          g.fecha_vencimiento <= hasta
+      );
+
+      // Cuotas pagadas en el mes (por fecha_pago_real)
+      const cuotasPagadasMes = data.filter(
+        (g) =>
+          g.es_cuota &&
+          g.estado === "pagado" &&
+          g.fecha_pago_real >= desde &&
+          g.fecha_pago_real <= hasta
+      );
+
+      // Próxima cuota pendiente de cada grupo con vencimiento en el mes
+      const gruposVistos = new Set();
+      const cuotasPendientesMes = [];
+      data
+        .filter((g) => g.es_cuota && g.estado === "pendiente")
+        .sort(
+          (a, b) =>
+            new Date(a.fecha_vencimiento) - new Date(b.fecha_vencimiento)
+        )
+        .forEach((g) => {
+          if (!gruposVistos.has(g.grupo_cuota_id)) {
+            if (g.fecha_vencimiento >= desde && g.fecha_vencimiento <= hasta) {
+              gruposVistos.add(g.grupo_cuota_id);
+              cuotasPendientesMes.push(g);
+            }
+          }
+        });
+
+      resultado = [
+        ...gastosSimplesMes,
+        ...cuotasPagadasMes,
+        ...cuotasPendientesMes,
+      ];
+      resultado.sort(
+        (a, b) => new Date(a.fecha_vencimiento) - new Date(b.fecha_vencimiento)
+      );
+    } else {
+      // Sin filtro de mes: gastos simples + próxima cuota pendiente de cada grupo + cuotas pagadas
+      const gruposVistos = new Set();
+      data.forEach((g) => {
+        if (!g.es_cuota) {
+          resultado.push(g);
+        } else if (g.estado === "pagado") {
+          resultado.push(g);
+        } else if (g.es_cuota && g.estado === "pendiente") {
+          if (!gruposVistos.has(g.grupo_cuota_id)) {
             gruposVistos.add(g.grupo_cuota_id);
-            gastosAgrupados.push({ ...g, _esPrimera: true });
+            resultado.push(g);
           }
         }
-      } else {
-        gastosAgrupados.push(g);
-      }
-    });
+      });
+    }
 
-    setGastos(gastosAgrupados);
+    // Aplicar filtro de estado
+    if (filtroEstado !== "todos") {
+      resultado = resultado.filter((g) => g.estado === filtroEstado);
+    }
+
+    setGastos(resultado);
     setCargando(false);
   }
 
@@ -228,9 +305,8 @@ export default function GastosModule() {
       cargarMiembros
     );
 
-    // Si no hay fecha de vencimiento, usamos la fecha de hoy
-    const hoy = new Date().toISOString().split("T")[0];
-    const fechaVencimientoFinal = form.fecha_vencimiento || hoy;
+    const hoyStr = new Date().toISOString().split("T")[0];
+    const fechaVencimientoFinal = form.fecha_vencimiento || hoyStr;
 
     if (form.es_cuota && !editandoId) {
       const totalCuotas = parseInt(form.total_cuotas);
@@ -276,10 +352,9 @@ export default function GastosModule() {
         return;
       }
     } else {
-      // Si el estado es pagado y no hay fecha de pago real, usamos hoy
       const fechaPagoReal =
         form.estado === "pagado"
-          ? form.fecha_pago_real || hoy
+          ? form.fecha_pago_real || hoyStr
           : form.fecha_pago_real || null;
 
       const datosGasto = {
@@ -291,8 +366,16 @@ export default function GastosModule() {
         fecha_vencimiento: fechaVencimientoFinal,
         fecha_pago_real: fechaPagoReal,
         estado: form.estado,
-        es_cuota: false,
+        es_cuota: form.es_cuota,
+        // Si es edición de cuota, preservamos los campos de cuota
+        ...(editandoId && form.es_cuota
+          ? {
+              total_cuotas: parseInt(form.total_cuotas) || null,
+              numero_cuota: form.numero_cuota || null,
+            }
+          : { es_cuota: false }),
       };
+
       let error;
       if (editandoId) {
         const res = await supabase
@@ -333,13 +416,16 @@ export default function GastosModule() {
       monto_total: "",
       monto_por_cuota: "",
       cuotas_variables: [],
+      numero_cuota: null,
     });
     setEditandoId(null);
   }
 
   function editarGasto(gasto) {
     setForm({
-      descripcion: gasto.descripcion || "",
+      descripcion: gasto.es_cuota
+        ? gasto.descripcion.split(" (")[0]
+        : gasto.descripcion || "",
       categoria_id: gasto.categoria_id || "",
       categoria_nueva: "",
       medio_pago_id: gasto.medio_pago_id || "",
@@ -350,12 +436,13 @@ export default function GastosModule() {
       fecha_vencimiento: gasto.fecha_vencimiento || "",
       fecha_pago_real: gasto.fecha_pago_real || "",
       estado: gasto.estado || "pendiente",
-      es_cuota: false,
+      es_cuota: gasto.es_cuota || false,
       cuota_fija: true,
-      total_cuotas: "",
+      total_cuotas: gasto.total_cuotas?.toString() || "",
       monto_total: "",
       monto_por_cuota: "",
       cuotas_variables: [],
+      numero_cuota: gasto.numero_cuota || null,
     });
     setEditandoId(gasto.id);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -400,18 +487,31 @@ export default function GastosModule() {
     }).format(valor);
   }
 
+  function formatFecha(fecha) {
+    if (!fecha) return null;
+    return new Date(fecha + "T00:00:00").toLocaleDateString("es-AR");
+  }
+
   const totalCuotasVariable = form.cuotas_variables.reduce(
     (acc, c) => acc + (parseFloat(c.monto) || 0),
     0
   );
+  const esCuotaEditando = editandoId && form.es_cuota;
 
   return (
     <div className="container">
       <h1>Gastos</h1>
       <p className="subtitulo">Registrá y controlá los gastos de la casa.</p>
 
+      {/* FORMULARIO */}
       <div className="formulario">
-        <h2>{editandoId ? "Editar gasto" : "Nuevo gasto"}</h2>
+        <h2>
+          {editandoId
+            ? esCuotaEditando
+              ? "Editar cuota"
+              : "Editar gasto"
+            : "Nuevo gasto"}
+        </h2>
         <form onSubmit={manejarEnvio}>
           <div className="grid-2">
             <div className="campo col-span-2">
@@ -517,51 +617,23 @@ export default function GastosModule() {
               </div>
             )}
 
-            <div className="campo">
-              <label>Monto</label>
-              <input
-                type="number"
-                step="0.01"
-                name="monto"
-                value={form.monto}
-                onChange={manejarCambio}
-                placeholder="0.00"
-                required
-              />
-            </div>
+            {/* CAMPOS CUOTA EN EDICIÓN */}
+            {esCuotaEditando && (
+              <div className="campo">
+                <label>Cantidad de cuotas</label>
+                <input
+                  type="number"
+                  name="total_cuotas"
+                  value={form.total_cuotas}
+                  onChange={manejarCambio}
+                  placeholder="Ej: 12"
+                  min="1"
+                  max="24"
+                />
+              </div>
+            )}
 
-            <div className="campo">
-              <label>Estado</label>
-              <select
-                name="estado"
-                value={form.estado}
-                onChange={manejarCambio}
-              >
-                <option value="pendiente">Pendiente</option>
-                <option value="pagado">Pagado</option>
-              </select>
-            </div>
-
-            <div className="campo">
-              <label>Fecha de vencimiento (opcional)</label>
-              <input
-                type="date"
-                name="fecha_vencimiento"
-                value={form.fecha_vencimiento}
-                onChange={manejarCambio}
-              />
-            </div>
-
-            <div className="campo">
-              <label>Fecha real de pago (opcional)</label>
-              <input
-                type="date"
-                name="fecha_pago_real"
-                value={form.fecha_pago_real}
-                onChange={manejarCambio}
-              />
-            </div>
-
+            {/* CHECKBOX CUOTAS (solo en nuevo) */}
             {!editandoId && (
               <div className="campo col-span-2">
                 <label className="label-checkbox">
@@ -590,7 +662,7 @@ export default function GastosModule() {
               </div>
             )}
 
-            {form.es_cuota && (
+            {form.es_cuota && !editandoId ? (
               <>
                 <div className="campo col-span-2">
                   <label>
@@ -688,6 +760,50 @@ export default function GastosModule() {
                   )
                 )}
               </>
+            ) : (
+              <>
+                <div className="campo">
+                  <label>Monto</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    name="monto"
+                    value={form.monto}
+                    onChange={manejarCambio}
+                    placeholder="0.00"
+                    required
+                  />
+                </div>
+                <div className="campo">
+                  <label>Estado</label>
+                  <select
+                    name="estado"
+                    value={form.estado}
+                    onChange={manejarCambio}
+                  >
+                    <option value="pendiente">Pendiente</option>
+                    <option value="pagado">Pagado</option>
+                  </select>
+                </div>
+                <div className="campo">
+                  <label>Fecha de vencimiento (opcional)</label>
+                  <input
+                    type="date"
+                    name="fecha_vencimiento"
+                    value={form.fecha_vencimiento}
+                    onChange={manejarCambio}
+                  />
+                </div>
+                <div className="campo">
+                  <label>Fecha real de pago (opcional)</label>
+                  <input
+                    type="date"
+                    name="fecha_pago_real"
+                    value={form.fecha_pago_real}
+                    onChange={manejarCambio}
+                  />
+                </div>
+              </>
             )}
           </div>
 
@@ -712,10 +828,70 @@ export default function GastosModule() {
         </form>
       </div>
 
+      {/* FILTROS DEL LISTADO */}
+      <div className="filtro-mes" style={{ marginBottom: "16px" }}>
+        <div className="filtro-grupo">
+          <label className="filtro-label">
+            <input
+              type="checkbox"
+              checked={filtrarPorMes}
+              onChange={(e) => setFiltrarPorMes(e.target.checked)}
+              style={{ marginRight: "6px", accentColor: "#818cf8" }}
+            />
+            Filtrar por mes
+          </label>
+        </div>
+        {filtrarPorMes && (
+          <>
+            <div className="filtro-grupo">
+              <label className="filtro-label">Mes</label>
+              <select
+                value={filtroMes}
+                onChange={(e) => setFiltroMes(parseInt(e.target.value))}
+                className="filtro-select"
+              >
+                {meses.map((m, i) => (
+                  <option key={i} value={i}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="filtro-grupo">
+              <label className="filtro-label">Año</label>
+              <select
+                value={filtroAnio}
+                onChange={(e) => setFiltroAnio(parseInt(e.target.value))}
+                className="filtro-select"
+              >
+                {anios.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
+        )}
+        <div className="filtro-grupo">
+          <label className="filtro-label">Estado</label>
+          <select
+            value={filtroEstado}
+            onChange={(e) => setFiltroEstado(e.target.value)}
+            className="filtro-select"
+          >
+            <option value="todos">Todos</option>
+            <option value="pendiente">Pendientes</option>
+            <option value="pagado">Pagados</option>
+          </select>
+        </div>
+      </div>
+
+      {/* LISTADO */}
       <h2>Gastos cargados</h2>
       {cargando && <p className="texto-cargando">Cargando gastos...</p>}
       {!cargando && gastos.length === 0 && (
-        <p className="texto-vacio">Todavía no cargaste ningún gasto.</p>
+        <p className="texto-vacio">No hay gastos para mostrar.</p>
       )}
 
       <div className="lista">
@@ -737,6 +913,11 @@ export default function GastosModule() {
                 >
                   {gasto.estado === "pagado" ? "Pagado" : "Pendiente"}
                 </span>
+                {gasto.estado === "pagado" && gasto.fecha_pago_real && (
+                  <span className="badge-fecha-pago">
+                    {formatFecha(gasto.fecha_pago_real)}
+                  </span>
+                )}
                 {gasto.es_cuota && (
                   <span className="badge badge-cuota">
                     Cuota {gasto.numero_cuota}/{gasto.total_cuotas}
@@ -749,11 +930,9 @@ export default function GastosModule() {
                   ? ` · ${gasto.medio_pago.nombre}`
                   : ""}
                 {gasto.miembro?.nombre ? ` · ${gasto.miembro.nombre}` : ""}
-                {" · "}
+                {" · Vence "}
                 {gasto.fecha_vencimiento
-                  ? `Vence ${new Date(
-                      gasto.fecha_vencimiento + "T00:00:00"
-                    ).toLocaleDateString("es-AR")}`
+                  ? formatFecha(gasto.fecha_vencimiento)
                   : "Sin vencimiento"}
               </span>
             </div>

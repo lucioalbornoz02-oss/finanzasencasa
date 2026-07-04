@@ -936,3 +936,48 @@ h2 {
   background: #543107;
   border-color: #af6e1f;
 }
+/* FECHA DE PAGO EN BADGE */
+.badge-fecha-pago {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #4ade80;
+  background: #052e16;
+  border: 1px solid #166534;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+/* TARJETA FUTUROS */
+.futuros-card {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.futuros-card:hover {
+  background: #253347;
+}
+
+.futuros-izq {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.futuros-titulo {
+  font-weight: 600;
+  color: #f1f5f9;
+  font-size: 0.95rem;
+}
+.futuros-sub {
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+.futuros-chevron {
+  color: #64748b;
+  font-size: 0.8rem;
+}
