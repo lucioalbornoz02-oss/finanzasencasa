@@ -981,3 +981,99 @@ h2 {
   color: #64748b;
   font-size: 0.8rem;
 }
+/* BUSCADOR */
+.buscador-container {
+  margin-bottom: 16px;
+}
+
+.buscador-fila {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.buscador-input {
+  flex: 1;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  color: #f1f5f9;
+  outline: none;
+  font-family: inherit;
+}
+
+.buscador-input:focus {
+  border-color: #818cf8;
+}
+.buscador-input::placeholder {
+  color: #475569;
+}
+
+.btn-buscar {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.btn-buscar:hover {
+  opacity: 0.9;
+}
+
+.btn-limpiar {
+  background: #1e293b;
+  color: #94a3b8;
+  border: 1px solid #334155;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+.btn-limpiar:hover {
+  background: #334155;
+}
+
+.buscador-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.buscador-resultados {
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.buscador-flechas {
+  display: flex;
+  gap: 4px;
+}
+
+.btn-flecha {
+  background: #1e293b;
+  color: #cbd5e1;
+  border: 1px solid #334155;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+.btn-flecha:hover {
+  background: #334155;
+}
+
+/* RESULTADO RESALTADO */
+.gasto-card-resaltado {
+  border-color: #818cf8 !important;
+  box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.3);
+}

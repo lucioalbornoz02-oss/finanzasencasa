@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabaseClient";
 
 export default function VencimientosModule() {
@@ -8,6 +8,12 @@ export default function VencimientosModule() {
   const [detalleCuotas, setDetalleCuotas] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [expandirFuturos, setExpandirFuturos] = useState(false);
+
+  // BUSCADOR
+  const [textoBusqueda, setTextoBusqueda] = useState("");
+  const [busquedaActiva, setBusquedaActiva] = useState("");
+  const [resultadoActual, setResultadoActual] = useState(0);
+  const resultadosRef = useRef([]);
 
   useEffect(() => {
     cargarVencimientos();
@@ -42,7 +48,6 @@ export default function VencimientosModule() {
       return;
     }
 
-    // Para cuotas: solo mostramos la próxima pendiente de cada grupo
     const gruposVistos = new Set();
     const filtrados = data.filter((g) => {
       if (!g.es_cuota || !g.grupo_cuota_id) return true;
@@ -139,13 +144,67 @@ export default function VencimientosModule() {
     return new Date(fecha + "T00:00:00").toLocaleDateString("es-AR");
   }
 
-  // Separamos en próximos (<=7 días o vencidos) y futuros (>7 días)
+  // BUSCADOR
+  function buscar() {
+    if (!textoBusqueda.trim()) {
+      setBusquedaActiva("");
+      setResultadoActual(0);
+      resultadosRef.current = [];
+      return;
+    }
+    setBusquedaActiva(textoBusqueda.trim().toLowerCase());
+    setResultadoActual(0);
+  }
+
+  function limpiarBusqueda() {
+    setTextoBusqueda("");
+    setBusquedaActiva("");
+    setResultadoActual(0);
+    resultadosRef.current = [];
+  }
+
+  function irAnterior() {
+    if (totalResultados === 0) return;
+    setResultadoActual((prev) => (prev === 0 ? totalResultados - 1 : prev - 1));
+  }
+
+  function irSiguiente() {
+    if (totalResultados === 0) return;
+    setResultadoActual((prev) => (prev === totalResultados - 1 ? 0 : prev + 1));
+  }
+
+  useEffect(() => {
+    if (busquedaActiva && resultadosRef.current[resultadoActual]) {
+      resultadosRef.current[resultadoActual].scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
+  }, [resultadoActual, busquedaActiva]);
+
+  // Separamos en próximos y futuros
   const proximos = vencimientos.filter(
     (g) => diasHastaVencimiento(g.fecha_vencimiento) <= 7
   );
   const futuros = vencimientos.filter(
     (g) => diasHastaVencimiento(g.fecha_vencimiento) > 7
   );
+
+  // Aplicamos búsqueda sobre todos los vencimientos
+  const todosParaBusqueda = [...proximos, ...futuros];
+  const resultadosBusqueda = busquedaActiva
+    ? todosParaBusqueda.filter((g) => {
+        const desc =
+          (g.es_cuota
+            ? g.descripcion.split(" (")[0]
+            : g.descripcion
+          )?.toLowerCase() || "";
+        const cat = g.categoria?.nombre?.toLowerCase() || "";
+        return desc.includes(busquedaActiva) || cat.includes(busquedaActiva);
+      })
+    : [];
+
+  const totalResultados = resultadosBusqueda.length;
 
   const totalPendiente = proximos.reduce(
     (acc, g) => acc + parseFloat(g.monto || 0),
@@ -163,7 +222,63 @@ export default function VencimientosModule() {
     return d >= 0 && d <= 2;
   }).length;
 
-  // VISTA DETALLE DE PLAN DE CUOTAS
+  function renderTarjeta(gasto, index, esBusqueda = false) {
+    const dias = diasHastaVencimiento(gasto.fecha_vencimiento);
+    const alerta = obtenerAlerta(dias);
+    const esCuota = gasto.es_cuota && gasto.grupo_cuota_id;
+    const esResaltado = esBusqueda && index === resultadoActual;
+
+    return (
+      <div
+        key={gasto.id}
+        ref={
+          esBusqueda
+            ? (el) => {
+                resultadosRef.current[index] = el;
+              }
+            : null
+        }
+        className={`vencimiento-card ${alerta.clase} ${
+          esCuota ? "vencimiento-clickeable" : ""
+        } ${esResaltado ? "gasto-card-resaltado" : ""}`}
+        onClick={esCuota ? () => abrirDetalle(gasto) : undefined}
+      >
+        <div className="vencimiento-izq">
+          <div className="gasto-titulo">
+            <span className="gasto-nombre">
+              {esCuota ? gasto.descripcion.split(" (")[0] : gasto.descripcion}
+            </span>
+            <span className={`badge-alerta ${alerta.clase}-badge`}>
+              {alerta.texto}
+            </span>
+            {esCuota && (
+              <span className="badge badge-cuota">
+                Cuota {gasto.numero_cuota}/{gasto.total_cuotas}
+              </span>
+            )}
+          </div>
+          <span className="gasto-meta">
+            {gasto.categoria?.nombre || "Sin categoría"} · Vence{" "}
+            {formatFecha(gasto.fecha_vencimiento)}
+            {esCuota && " · Tocá para ver el plan →"}
+          </span>
+        </div>
+        <div className="vencimiento-der" onClick={(e) => e.stopPropagation()}>
+          <span className="gasto-monto">{formatearMonto(gasto.monto)}</span>
+          {!esCuota && (
+            <button
+              onClick={() => marcarComoPagado(gasto.id)}
+              className="btn-pagar"
+            >
+              Marcar pagado
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // VISTA DETALLE
   if (vista === "detalle" && grupoCuotaActivo) {
     const pendientes = detalleCuotas.filter((c) => c.estado === "pendiente");
     const pagadas = detalleCuotas.filter((c) => c.estado === "pagado");
@@ -323,152 +438,113 @@ export default function VencimientosModule() {
         </div>
       )}
 
-      {/* LISTADO PRÓXIMOS */}
-      <h2>Vencidos y próximos 7 días</h2>
-      {cargando && <p className="texto-cargando">Cargando vencimientos...</p>}
-      {!cargando && proximos.length === 0 && (
-        <p className="texto-vacio">¡Sin vencimientos urgentes! Todo al día.</p>
-      )}
-
-      <div className="lista" style={{ marginBottom: "24px" }}>
-        {proximos.map((gasto) => {
-          const dias = diasHastaVencimiento(gasto.fecha_vencimiento);
-          const alerta = obtenerAlerta(dias);
-          const esCuota = gasto.es_cuota && gasto.grupo_cuota_id;
-
-          return (
-            <div
-              key={gasto.id}
-              className={`vencimiento-card ${alerta.clase} ${
-                esCuota ? "vencimiento-clickeable" : ""
-              }`}
-              onClick={esCuota ? () => abrirDetalle(gasto) : undefined}
-            >
-              <div className="vencimiento-izq">
-                <div className="gasto-titulo">
-                  <span className="gasto-nombre">
-                    {esCuota
-                      ? gasto.descripcion.split(" (")[0]
-                      : gasto.descripcion}
-                  </span>
-                  <span className={`badge-alerta ${alerta.clase}-badge`}>
-                    {alerta.texto}
-                  </span>
-                  {esCuota && (
-                    <span className="badge badge-cuota">
-                      Cuota {gasto.numero_cuota}/{gasto.total_cuotas}
-                    </span>
-                  )}
-                </div>
-                <span className="gasto-meta">
-                  {gasto.categoria?.nombre || "Sin categoría"} · Vence{" "}
-                  {formatFecha(gasto.fecha_vencimiento)}
-                  {esCuota && " · Tocá para ver el plan →"}
-                </span>
-              </div>
-              <div
-                className="vencimiento-der"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <span className="gasto-monto">
-                  {formatearMonto(gasto.monto)}
-                </span>
-                {!esCuota && (
-                  <button
-                    onClick={() => marcarComoPagado(gasto.id)}
-                    className="btn-pagar"
-                  >
-                    Marcar pagado
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* TARJETA FUTUROS (+7 DÍAS) */}
-      {!cargando && futuros.length > 0 && (
-        <div>
-          <div
-            className="futuros-card"
-            onClick={() => setExpandirFuturos(!expandirFuturos)}
-          >
-            <div className="futuros-izq">
-              <span className="futuros-titulo">📅 Vencimientos + 7 días</span>
-              <span className="futuros-sub">
-                {futuros.length} gasto{futuros.length !== 1 ? "s" : ""} ·{" "}
-                {formatearMonto(totalFuturos)}
-              </span>
-            </div>
-            <span className="futuros-chevron">
-              {expandirFuturos ? "▲" : "▼"}
-            </span>
-          </div>
-
-          {expandirFuturos && (
-            <div className="lista" style={{ marginTop: "8px" }}>
-              {futuros.map((gasto) => {
-                const dias = diasHastaVencimiento(gasto.fecha_vencimiento);
-                const alerta = obtenerAlerta(dias);
-                const esCuota = gasto.es_cuota && gasto.grupo_cuota_id;
-
-                return (
-                  <div
-                    key={gasto.id}
-                    className={`vencimiento-card ${alerta.clase} ${
-                      esCuota ? "vencimiento-clickeable" : ""
-                    }`}
-                    onClick={esCuota ? () => abrirDetalle(gasto) : undefined}
-                  >
-                    <div className="vencimiento-izq">
-                      <div className="gasto-titulo">
-                        <span className="gasto-nombre">
-                          {esCuota
-                            ? gasto.descripcion.split(" (")[0]
-                            : gasto.descripcion}
-                        </span>
-                        <span className={`badge-alerta ${alerta.clase}-badge`}>
-                          {alerta.texto}
-                        </span>
-                        {esCuota && (
-                          <span className="badge badge-cuota">
-                            Cuota {gasto.numero_cuota}/{gasto.total_cuotas}
-                          </span>
-                        )}
-                      </div>
-                      <span className="gasto-meta">
-                        {gasto.categoria?.nombre || "Sin categoría"} · Vence{" "}
-                        {formatFecha(gasto.fecha_vencimiento)}
-                        {esCuota && " · Tocá para ver el plan →"}
-                      </span>
-                    </div>
-                    <div
-                      className="vencimiento-der"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <span className="gasto-monto">
-                        {formatearMonto(gasto.monto)}
-                      </span>
-                      {!esCuota && (
-                        <button
-                          onClick={() => marcarComoPagado(gasto.id)}
-                          className="btn-pagar"
-                        >
-                          Marcar pagado
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+      {/* BUSCADOR */}
+      <div className="buscador-container">
+        <div className="buscador-fila">
+          <input
+            type="text"
+            value={textoBusqueda}
+            onChange={(e) => setTextoBusqueda(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && buscar()}
+            placeholder="Buscar por descripción o categoría..."
+            className="buscador-input"
+          />
+          <button onClick={buscar} className="btn-buscar">
+            Buscar
+          </button>
+          {busquedaActiva && (
+            <button onClick={limpiarBusqueda} className="btn-limpiar">
+              ✕
+            </button>
           )}
         </div>
-      )}
+        {busquedaActiva && (
+          <div className="buscador-nav">
+            <span className="buscador-resultados">
+              {totalResultados === 0
+                ? "Sin resultados"
+                : `${resultadoActual + 1} de ${totalResultados} resultado${
+                    totalResultados !== 1 ? "s" : ""
+                  }`}
+            </span>
+            {totalResultados > 1 && (
+              <div className="buscador-flechas">
+                <button onClick={irAnterior} className="btn-flecha">
+                  ←
+                </button>
+                <button onClick={irSiguiente} className="btn-flecha">
+                  →
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
-      {!cargando && vencimientos.length === 0 && (
-        <p className="texto-vacio">¡No hay gastos pendientes! Todo al día.</p>
+      {/* SI HAY BÚSQUEDA ACTIVA: mostrar resultados */}
+      {busquedaActiva ? (
+        <>
+          <h2>Resultados de búsqueda</h2>
+          {totalResultados === 0 && (
+            <p className="texto-vacio">No se encontraron vencimientos.</p>
+          )}
+          <div className="lista">
+            {resultadosBusqueda.map((gasto, index) =>
+              renderTarjeta(gasto, index, true)
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          {/* LISTADO PRÓXIMOS */}
+          <h2>Vencidos y próximos 7 días</h2>
+          {cargando && (
+            <p className="texto-cargando">Cargando vencimientos...</p>
+          )}
+          {!cargando && proximos.length === 0 && (
+            <p className="texto-vacio">
+              ¡Sin vencimientos urgentes! Todo al día.
+            </p>
+          )}
+          <div className="lista" style={{ marginBottom: "24px" }}>
+            {proximos.map((gasto) => renderTarjeta(gasto, -1, false))}
+          </div>
+
+          {/* TARJETA FUTUROS */}
+          {!cargando && futuros.length > 0 && (
+            <div>
+              <div
+                className="futuros-card"
+                onClick={() => setExpandirFuturos(!expandirFuturos)}
+              >
+                <div className="futuros-izq">
+                  <span className="futuros-titulo">
+                    📅 Vencimientos + 7 días
+                  </span>
+                  <span className="futuros-sub">
+                    {futuros.length} gasto{futuros.length !== 1 ? "s" : ""} ·{" "}
+                    {formatearMonto(totalFuturos)}
+                  </span>
+                </div>
+                <span className="futuros-chevron">
+                  {expandirFuturos ? "▲" : "▼"}
+                </span>
+              </div>
+
+              {expandirFuturos && (
+                <div className="lista" style={{ marginTop: "8px" }}>
+                  {futuros.map((gasto) => renderTarjeta(gasto, -1, false))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {!cargando && vencimientos.length === 0 && (
+            <p className="texto-vacio">
+              ¡No hay gastos pendientes! Todo al día.
+            </p>
+          )}
+        </>
       )}
     </div>
   );

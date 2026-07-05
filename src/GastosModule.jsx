@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabaseClient";
 
 export default function GastosModule() {
@@ -13,6 +13,12 @@ export default function GastosModule() {
   const [filtroMes, setFiltroMes] = useState(hoy.getMonth());
   const [filtroAnio, setFiltroAnio] = useState(hoy.getFullYear());
   const [filtrarPorMes, setFiltrarPorMes] = useState(true);
+
+  // BUSCADOR
+  const [textoBusqueda, setTextoBusqueda] = useState("");
+  const [busquedaActiva, setBusquedaActiva] = useState("");
+  const [resultadoActual, setResultadoActual] = useState(0);
+  const resultadosRef = useRef([]);
 
   const meses = [
     "Enero",
@@ -52,6 +58,7 @@ export default function GastosModule() {
     monto_total: "",
     monto_por_cuota: "",
     cuotas_variables: [],
+    numero_cuota: null,
   });
 
   useEffect(() => {
@@ -109,7 +116,6 @@ export default function GastosModule() {
 
   async function cargarGastos() {
     setCargando(true);
-
     const desde = new Date(filtroAnio, filtroMes, 1)
       .toISOString()
       .split("T")[0];
@@ -117,7 +123,6 @@ export default function GastosModule() {
       .toISOString()
       .split("T")[0];
 
-    // Traemos todos los gastos sin filtro de mes para procesar después
     let query = supabase
       .from("gastos")
       .select(
@@ -135,15 +140,12 @@ export default function GastosModule() {
     let resultado = [];
 
     if (filtrarPorMes) {
-      // Gastos simples: por fecha_vencimiento del mes
       const gastosSimplesMes = data.filter(
         (g) =>
           !g.es_cuota &&
           g.fecha_vencimiento >= desde &&
           g.fecha_vencimiento <= hasta
       );
-
-      // Cuotas pagadas en el mes (por fecha_pago_real)
       const cuotasPagadasMes = data.filter(
         (g) =>
           g.es_cuota &&
@@ -151,8 +153,6 @@ export default function GastosModule() {
           g.fecha_pago_real >= desde &&
           g.fecha_pago_real <= hasta
       );
-
-      // Próxima cuota pendiente de cada grupo con vencimiento en el mes
       const gruposVistos = new Set();
       const cuotasPendientesMes = [];
       data
@@ -169,7 +169,6 @@ export default function GastosModule() {
             }
           }
         });
-
       resultado = [
         ...gastosSimplesMes,
         ...cuotasPagadasMes,
@@ -179,7 +178,6 @@ export default function GastosModule() {
         (a, b) => new Date(a.fecha_vencimiento) - new Date(b.fecha_vencimiento)
       );
     } else {
-      // Sin filtro de mes: gastos simples + próxima cuota pendiente de cada grupo + cuotas pagadas
       const gruposVistos = new Set();
       data.forEach((g) => {
         if (!g.es_cuota) {
@@ -195,7 +193,6 @@ export default function GastosModule() {
       });
     }
 
-    // Aplicar filtro de estado
     if (filtroEstado !== "todos") {
       resultado = resultado.filter((g) => g.estado === filtroEstado);
     }
@@ -204,13 +201,65 @@ export default function GastosModule() {
     setCargando(false);
   }
 
+  // LÓGICA DE BÚSQUEDA
+  function buscar() {
+    if (!textoBusqueda.trim()) {
+      setBusquedaActiva("");
+      setResultadoActual(0);
+      resultadosRef.current = [];
+      return;
+    }
+    setBusquedaActiva(textoBusqueda.trim().toLowerCase());
+    setResultadoActual(0);
+  }
+
+  function limpiarBusqueda() {
+    setTextoBusqueda("");
+    setBusquedaActiva("");
+    setResultadoActual(0);
+    resultadosRef.current = [];
+  }
+
+  // Filtramos los gastos que coinciden con la búsqueda
+  const gastosFiltrados = busquedaActiva
+    ? gastos.filter((g) => {
+        const desc =
+          (g.es_cuota
+            ? g.descripcion.split(" (")[0]
+            : g.descripcion
+          )?.toLowerCase() || "";
+        const cat = g.categoria?.nombre?.toLowerCase() || "";
+        return desc.includes(busquedaActiva) || cat.includes(busquedaActiva);
+      })
+    : gastos;
+
+  const totalResultados = busquedaActiva ? gastosFiltrados.length : 0;
+
+  function irAnterior() {
+    if (totalResultados === 0) return;
+    setResultadoActual((prev) => (prev === 0 ? totalResultados - 1 : prev - 1));
+  }
+
+  function irSiguiente() {
+    if (totalResultados === 0) return;
+    setResultadoActual((prev) => (prev === totalResultados - 1 ? 0 : prev + 1));
+  }
+
+  // Scroll al resultado actual
+  useEffect(() => {
+    if (busquedaActiva && resultadosRef.current[resultadoActual]) {
+      resultadosRef.current[resultadoActual].scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
+  }, [resultadoActual, busquedaActiva]);
+
   function manejarCambio(e) {
     const { name, value, type, checked } = e.target;
     const val = type === "checkbox" ? checked : value;
-
     setForm((ant) => {
       const nuevo = { ...ant, [name]: val };
-
       if (name === "monto_total" && ant.total_cuotas && ant.cuota_fija) {
         const porCuota = parseFloat(value) / parseInt(ant.total_cuotas);
         nuevo.monto_por_cuota = isNaN(porCuota) ? "" : porCuota.toFixed(2);
@@ -283,7 +332,6 @@ export default function GastosModule() {
 
   async function manejarEnvio(e) {
     e.preventDefault();
-
     const categoriaIdFinal = await resolverNuevoItem(
       form.categoria_id,
       form.categoria_nueva,
@@ -291,7 +339,6 @@ export default function GastosModule() {
       cargarCategorias
     );
     if (!categoriaIdFinal) return;
-
     const medioPagoIdFinal = await resolverNuevoItem(
       form.medio_pago_id,
       form.medio_pago_nuevo,
@@ -304,14 +351,12 @@ export default function GastosModule() {
       "miembro_familia",
       cargarMiembros
     );
-
     const hoyStr = new Date().toISOString().split("T")[0];
     const fechaVencimientoFinal = form.fecha_vencimiento || hoyStr;
 
     if (form.es_cuota && !editandoId) {
       const totalCuotas = parseInt(form.total_cuotas);
       const grupoCuotaId = crypto.randomUUID();
-
       let cuotas;
       if (form.cuota_fija) {
         const montoPorCuota = parseFloat(form.monto_por_cuota);
@@ -345,7 +390,6 @@ export default function GastosModule() {
           total_cuotas: totalCuotas,
         }));
       }
-
       const { error } = await supabase.from("gastos").insert(cuotas);
       if (error) {
         alert("No se pudieron guardar las cuotas.");
@@ -356,7 +400,6 @@ export default function GastosModule() {
         form.estado === "pagado"
           ? form.fecha_pago_real || hoyStr
           : form.fecha_pago_real || null;
-
       const datosGasto = {
         descripcion: form.descripcion,
         categoria_id: categoriaIdFinal,
@@ -367,7 +410,6 @@ export default function GastosModule() {
         fecha_pago_real: fechaPagoReal,
         estado: form.estado,
         es_cuota: form.es_cuota,
-        // Si es edición de cuota, preservamos los campos de cuota
         ...(editandoId && form.es_cuota
           ? {
               total_cuotas: parseInt(form.total_cuotas) || null,
@@ -375,7 +417,6 @@ export default function GastosModule() {
             }
           : { es_cuota: false }),
       };
-
       let error;
       if (editandoId) {
         const res = await supabase
@@ -392,7 +433,6 @@ export default function GastosModule() {
         return;
       }
     }
-
     limpiarFormulario();
     cargarGastos();
   }
@@ -497,6 +537,9 @@ export default function GastosModule() {
     0
   );
   const esCuotaEditando = editandoId && form.es_cuota;
+
+  // Índice global de resultados para asignar ref
+  let indiceResultado = -1;
 
   return (
     <div className="container">
@@ -617,7 +660,6 @@ export default function GastosModule() {
               </div>
             )}
 
-            {/* CAMPOS CUOTA EN EDICIÓN */}
             {esCuotaEditando && (
               <div className="campo">
                 <label>Cantidad de cuotas</label>
@@ -633,7 +675,6 @@ export default function GastosModule() {
               </div>
             )}
 
-            {/* CHECKBOX CUOTAS (solo en nuevo) */}
             {!editandoId && (
               <div className="campo col-span-2">
                 <label className="label-checkbox">
@@ -828,7 +869,7 @@ export default function GastosModule() {
         </form>
       </div>
 
-      {/* FILTROS DEL LISTADO */}
+      {/* FILTROS */}
       <div className="filtro-mes" style={{ marginBottom: "16px" }}>
         <div className="filtro-grupo">
           <label className="filtro-label">
@@ -887,69 +928,138 @@ export default function GastosModule() {
         </div>
       </div>
 
+      {/* BUSCADOR */}
+      <div className="buscador-container">
+        <div className="buscador-fila">
+          <input
+            type="text"
+            value={textoBusqueda}
+            onChange={(e) => setTextoBusqueda(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && buscar()}
+            placeholder="Buscar por descripción o categoría..."
+            className="buscador-input"
+          />
+          <button onClick={buscar} className="btn-buscar">
+            Buscar
+          </button>
+          {busquedaActiva && (
+            <button onClick={limpiarBusqueda} className="btn-limpiar">
+              ✕
+            </button>
+          )}
+        </div>
+        {busquedaActiva && (
+          <div className="buscador-nav">
+            <span className="buscador-resultados">
+              {totalResultados === 0
+                ? "Sin resultados"
+                : `${resultadoActual + 1} de ${totalResultados} resultado${
+                    totalResultados !== 1 ? "s" : ""
+                  }`}
+            </span>
+            {totalResultados > 1 && (
+              <div className="buscador-flechas">
+                <button onClick={irAnterior} className="btn-flecha">
+                  ←
+                </button>
+                <button onClick={irSiguiente} className="btn-flecha">
+                  →
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* LISTADO */}
       <h2>Gastos cargados</h2>
       {cargando && <p className="texto-cargando">Cargando gastos...</p>}
-      {!cargando && gastos.length === 0 && (
-        <p className="texto-vacio">No hay gastos para mostrar.</p>
+      {!cargando && gastosFiltrados.length === 0 && (
+        <p className="texto-vacio">
+          {busquedaActiva
+            ? "No se encontraron gastos."
+            : "No hay gastos para mostrar."}
+        </p>
       )}
 
       <div className="lista">
-        {gastos.map((gasto) => (
-          <div key={gasto.id} className="gasto-card">
-            <div className="gasto-info">
-              <div className="gasto-titulo">
-                <span className="gasto-nombre">
-                  {gasto.es_cuota
-                    ? gasto.descripcion.split(" (")[0]
-                    : gasto.descripcion}
-                </span>
-                <span
-                  className={`badge ${
-                    gasto.estado === "pagado"
-                      ? "badge-pagado"
-                      : "badge-pendiente"
-                  }`}
-                >
-                  {gasto.estado === "pagado" ? "Pagado" : "Pendiente"}
-                </span>
-                {gasto.estado === "pagado" && gasto.fecha_pago_real && (
-                  <span className="badge-fecha-pago">
-                    {formatFecha(gasto.fecha_pago_real)}
+        {gastosFiltrados.map((gasto, index) => {
+          const esResultadoActual = busquedaActiva && index === resultadoActual;
+          if (busquedaActiva) indiceResultado++;
+
+          return (
+            <div
+              key={gasto.id}
+              ref={
+                busquedaActiva
+                  ? (el) => {
+                      resultadosRef.current[index] = el;
+                    }
+                  : null
+              }
+              className={`gasto-card ${
+                esResultadoActual ? "gasto-card-resaltado" : ""
+              }`}
+            >
+              <div className="gasto-info">
+                <div className="gasto-titulo">
+                  <span className="gasto-nombre">
+                    {gasto.es_cuota
+                      ? gasto.descripcion.split(" (")[0]
+                      : gasto.descripcion}
                   </span>
-                )}
-                {gasto.es_cuota && (
-                  <span className="badge badge-cuota">
-                    Cuota {gasto.numero_cuota}/{gasto.total_cuotas}
+                  <span
+                    className={`badge ${
+                      gasto.estado === "pagado"
+                        ? "badge-pagado"
+                        : "badge-pendiente"
+                    }`}
+                  >
+                    {gasto.estado === "pagado" ? "Pagado" : "Pendiente"}
                   </span>
-                )}
+                  {gasto.estado === "pagado" && gasto.fecha_pago_real && (
+                    <span className="badge-fecha-pago">
+                      {formatFecha(gasto.fecha_pago_real)}
+                    </span>
+                  )}
+                  {gasto.es_cuota && (
+                    <span className="badge badge-cuota">
+                      Cuota {gasto.numero_cuota}/{gasto.total_cuotas}
+                    </span>
+                  )}
+                </div>
+                <span className="gasto-meta">
+                  {gasto.categoria?.nombre || "Sin categoría"}
+                  {gasto.medio_pago?.nombre
+                    ? ` · ${gasto.medio_pago.nombre}`
+                    : ""}
+                  {gasto.miembro?.nombre ? ` · ${gasto.miembro.nombre}` : ""}
+                  {" · Vence "}
+                  {gasto.fecha_vencimiento
+                    ? formatFecha(gasto.fecha_vencimiento)
+                    : "Sin vencimiento"}
+                </span>
               </div>
-              <span className="gasto-meta">
-                {gasto.categoria?.nombre || "Sin categoría"}
-                {gasto.medio_pago?.nombre
-                  ? ` · ${gasto.medio_pago.nombre}`
-                  : ""}
-                {gasto.miembro?.nombre ? ` · ${gasto.miembro.nombre}` : ""}
-                {" · Vence "}
-                {gasto.fecha_vencimiento
-                  ? formatFecha(gasto.fecha_vencimiento)
-                  : "Sin vencimiento"}
-              </span>
+              <div className="gasto-acciones">
+                <span className="gasto-monto">
+                  {formatearMonto(gasto.monto)}
+                </span>
+                <button
+                  onClick={() => editarGasto(gasto)}
+                  className="btn-editar"
+                >
+                  Editar
+                </button>
+                <button
+                  onClick={() => eliminarGasto(gasto.id, gasto.grupo_cuota_id)}
+                  className="btn-eliminar"
+                >
+                  Eliminar
+                </button>
+              </div>
             </div>
-            <div className="gasto-acciones">
-              <span className="gasto-monto">{formatearMonto(gasto.monto)}</span>
-              <button onClick={() => editarGasto(gasto)} className="btn-editar">
-                Editar
-              </button>
-              <button
-                onClick={() => eliminarGasto(gasto.id, gasto.grupo_cuota_id)}
-                className="btn-eliminar"
-              >
-                Eliminar
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
