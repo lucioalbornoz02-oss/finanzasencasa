@@ -1077,3 +1077,30 @@ h2 {
   border-color: #818cf8 !important;
   box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.3);
 }
+/* GRUPOS POR FECHA */
+.grupo-fecha-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 4px;
+  margin-top: 16px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid #1e293b;
+}
+
+.grupo-fecha-titulo {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: capitalize;
+}
+
+.grupo-fecha-total {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.grupo-fecha-pendiente .grupo-fecha-titulo {
+  color: #fb923c;
+}
